@@ -28,7 +28,6 @@ COPY --from=builder /root/trueblocks-core/bin/chifra /usr/local/bin/chifra
 
 RUN mkdir -p /root/.local/share/trueblocks
 COPY chifra/trueBlocks.toml /root/.local/share/trueblocks/trueBlocks.toml
-COPY chifra/config/ /root/.local/share/trueblocks/config/
 
 COPY chifra/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

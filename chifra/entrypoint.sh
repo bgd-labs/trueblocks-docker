@@ -1,11 +1,7 @@
 #!/bin/sh
 set +e
 
-while true; do
-    chifra scrape --chain mainnet
-    echo "chifra scrape exited with $?, restarting in 5s..."
-    sleep 5
-done &
+chifra init --all
 
 while true; do
     chifra daemon --verbose --url 0.0.0.0:8080
