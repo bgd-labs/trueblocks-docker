@@ -39,7 +39,9 @@ const CHAIN_CONFIG: Record<
 await refreshHeads(Object.values(config.chains));
 
 const ChainId = t.Union(
-  Object.keys(CHAIN_CONFIG).map((id) => t.Literal(id)),
+  Object.entries(CHAIN_CONFIG).map(([id, { name }]) =>
+    t.Literal(id, { description: name }),
+  ),
   { description: "EIP-155 chain ID" },
 );
 
