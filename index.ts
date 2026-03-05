@@ -37,7 +37,10 @@ const CHAIN_CONFIG: Record<
 
 await refreshHeads(Object.values(config.chains));
 
-const ChainId = t.Union(Object.keys(CHAIN_CONFIG).map((id) => t.Literal(id)));
+const ChainId = t.Union(
+  Object.keys(CHAIN_CONFIG).map((id) => t.Literal(id)),
+  { description: "EIP-155 chain ID" },
+);
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
@@ -52,16 +55,28 @@ function humanSize(bytes: number): string {
 }
 
 const Log = t.Object({
-  address: t.String(),
-  blockHash: t.String(),
-  blockNumber: t.Number(),
-  data: t.Optional(t.String()),
-  logIndex: t.Number(),
-  timestamp: t.Number(),
-  topics: t.Array(t.String()),
-  transactionHash: t.String(),
-  transactionIndex: t.Number(),
-  safe: t.Boolean(),
+  address: t.String({
+    description: "Address of the contract that emitted the log",
+  }),
+  blockHash: t.String({ description: "Hash of the block containing this log" }),
+  blockNumber: t.Number({ description: "Block number containing this log" }),
+  data: t.Optional(
+    t.String({ description: "ABI-encoded non-indexed log parameters" }),
+  ),
+  logIndex: t.Number({ description: "Index of this log within the block" }),
+  timestamp: t.Number({ description: "Unix timestamp of the block" }),
+  topics: t.Array(t.String(), {
+    description: "Indexed log topics; the first is the event signature hash",
+  }),
+  transactionHash: t.String({
+    description: "Hash of the transaction that emitted this log",
+  }),
+  transactionIndex: t.Number({
+    description: "Index of the transaction within the block",
+  }),
+  safe: t.Boolean({
+    description: "Whether this log is from a block considered safe from reorgs",
+  }),
 });
 
 new Elysia()
@@ -211,10 +226,21 @@ new Elysia()
     {
       params: t.Object({ chainId: ChainId }),
       query: t.Object({
-        from: t.Numeric(),
-        to: t.Numeric(),
-        emitter: t.Optional(t.Union([t.Array(t.String()), t.String()])),
-        topic: t.Optional(t.Union([t.Array(t.String()), t.String()])),
+        from: t.Numeric({ description: "Start block number (inclusive)" }),
+        to: t.Numeric({
+          description:
+            "End block number (inclusive); swapped with `from` if smaller",
+        }),
+        emitter: t.Optional(
+          t.Union([t.Array(t.String()), t.String()], {
+            description: "Filter by emitting contract address(es)",
+          }),
+        ),
+        topic: t.Optional(
+          t.Union([t.Array(t.String()), t.String()], {
+            description: "Filter by log topic(s)",
+          }),
+        ),
       }),
       response: {
         200: t.Array(Log),
