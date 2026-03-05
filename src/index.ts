@@ -3,6 +3,7 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
 import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
+import pRetry from "p-retry";
 import { tokenSet } from "./auth";
 import { estimatedHead, refreshHeads } from "./chainHeads";
 import { trueblocks } from "./trueblocks-client";
@@ -251,26 +252,32 @@ new Elysia()
           : [];
 
       async function fetchBlocks(f: bigint, t: bigint, safe: boolean) {
-        const { data, error } = await trueblocks.GET("/blocks", {
-          params: {
-            query: {
-              blocks: [`${f}-${t}`],
-              chain: cfg.name,
-              logs: true,
-              cache: safe,
-              emitter: emitters.length ? emitters : undefined,
-              topic: topics.length ? topics : undefined,
-            },
+        return pRetry(
+          async () => {
+            const { data, error } = await trueblocks.GET("/blocks", {
+              params: {
+                query: {
+                  blocks: [`${f}-${t}`],
+                  chain: cfg.name,
+                  logs: true,
+                  cache: safe,
+                  emitter: emitters.length ? emitters : undefined,
+                  topic: topics.length ? topics : undefined,
+                },
+              },
+            });
+            if (error) throw new Error(JSON.stringify(error));
+            return (
+              (data?.data ?? []) as Array<
+                { date?: unknown } & Record<string, unknown>
+              >
+            ).map(({ date: _, ...log }) => ({
+              ...log,
+              safe,
+            })) as unknown as Array<typeof Log.static>;
           },
-        });
-        if (error) throw new Error(JSON.stringify(error));
-        return (
-          (data?.data ?? []) as Array<
-            { date?: unknown } & Record<string, unknown>
-          >
-        ).map(({ date: _, ...log }) => ({ ...log, safe })) as unknown as Array<
-          typeof Log.static
-        >;
+          { retries: 5, minTimeout: 2000 },
+        );
       }
 
       let logs: Array<typeof Log.static>;
