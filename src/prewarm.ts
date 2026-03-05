@@ -3,7 +3,7 @@ import pThrottle from "p-throttle";
 const BASE_URL = process.env.API_URL ?? "https://logs.bgdlabs.com";
 const TOKEN = process.env.API_TOKEN ?? "";
 const STEP = 1000;
-const END_BLOCK = 100_000;
+const END_BLOCK = 24_000_000;
 
 const chainId = process.argv[2];
 if (!chainId) {
@@ -17,8 +17,8 @@ const fetchRange = throttle(async (from: number, to: number) => {
   const url = `${BASE_URL}/${chainId}/logs?from=${from}&to=${to}&token=${TOKEN}`;
   while (true) {
     const res = await fetch(url);
-    if (res.status === 429) {
-      console.warn(`THROTTLE ${from}-${to}, retrying in 5s...`);
+    if (res.status === 429 || res.status === 502) {
+      console.warn(`${res.status} ${from}-${to}, retrying in 5s...`);
       await Bun.sleep(5000);
       continue;
     }
