@@ -11,7 +11,7 @@ if (!chainId) {
   process.exit(1);
 }
 
-const queue = new PQueue({ concurrency: 1, interval: 500, intervalCap: 1 });
+const queue = new PQueue({ concurrency: 1 });
 
 async function fetchRange(from: number, to: number): Promise<void> {
   const url = `${BASE_URL}/${chainId}/logs?from=${from}&to=${to}&token=${TOKEN}`;
@@ -19,7 +19,7 @@ async function fetchRange(from: number, to: number): Promise<void> {
     const res = await fetch(url);
     if (res.status === 429 || res.status === 502) {
       console.warn(`${res.status} ${from}-${to}, retrying...`);
-      await Bun.sleep(500);
+      await Bun.sleep(1000);
       continue;
     }
     if (!res.ok) {
