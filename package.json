@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "generate": "openapi-typescript https://raw.githubusercontent.com/TrueBlocks/trueblocks-core/develop/docs/content/api/openapi.yaml -o trueblocks.d.ts"
+    "generate": "bun run generate.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
