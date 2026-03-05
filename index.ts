@@ -10,28 +10,35 @@ const TOML_PATH = process.env.TRUEBLOCKS_CONFIG ?? "./trueBlocks.toml";
 
 const toml = await Bun.file(TOML_PATH).text();
 const config = Bun.TOML.parse(toml) as {
-  chains: Record<string, {
-    chain: string;
-    chainId: string;
-    safetyDistance: number;
-    blockTimeMs: number;
-  }>;
+  chains: Record<
+    string,
+    {
+      chain: string;
+      chainId: string;
+      safetyDistance: number;
+      blockTimeMs: number;
+    }
+  >;
 };
 
-const CHAIN_CONFIG: Record<string, { name: string; safetyDistance: bigint; blockTimeMs: number }> =
-  Object.fromEntries(
-    Object.values(config.chains).map(({ chainId, chain, safetyDistance, blockTimeMs }) => [
+const CHAIN_CONFIG: Record<
+  string,
+  { name: string; safetyDistance: bigint; blockTimeMs: number }
+> = Object.fromEntries(
+  Object.values(config.chains).map(
+    ({ chainId, chain, safetyDistance, blockTimeMs }) => [
       chainId,
       { name: chain, safetyDistance: BigInt(safetyDistance), blockTimeMs },
-    ])
-  );
+    ],
+  ),
+);
 
 type HeadInfo = { height: number; fetchedAt: number };
 const chainHeads = new Map<string, HeadInfo>();
 
 async function fetchHeight(chainId: string): Promise<number> {
   const res = await fetch(`https://${chainId}.hypersync.xyz/height`);
-  const json = await res.json() as { height: number };
+  const json = (await res.json()) as { height: number };
   return json.height;
 }
 
@@ -43,7 +50,7 @@ function estimatedHead(chainId: string, blockTimeMs: number): number {
 }
 
 async function refreshHeads() {
-  for (const { chainId, blockTimeMs } of Object.values(config.chains)) {
+  for (const { chainId } of Object.values(config.chains)) {
     try {
       const height = await fetchHeight(chainId);
       chainHeads.set(chainId, { height, fetchedAt: Date.now() });
@@ -148,10 +155,11 @@ new Elysia()
   .get(
     "/:chainId/logs",
     async ({ params, query, status, set }) => {
-      const cfg = CHAIN_CONFIG[params.chainId];
-      if (!cfg) {
-        return status(400, `Unsupported chainId: ${params.chainId}`);
-      }
+      const cfg = CHAIN_CONFIG[params.chainId] ?? {
+        name: "",
+        safetyDistance: 0n,
+        blockTimeMs: 0,
+      };
 
       let from = BigInt(query.from);
       let to = BigInt(query.to);
@@ -163,13 +171,19 @@ new Elysia()
         return status(400, `Block range must be at most ${MAX_BLOCK_RANGE}`);
       }
 
-      const safeBlock = BigInt(estimatedHead(params.chainId, cfg.blockTimeMs)) - cfg.safetyDistance;
+      const safeBlock =
+        BigInt(estimatedHead(params.chainId, cfg.blockTimeMs)) -
+        cfg.safetyDistance;
       const emitters = Array.isArray(query.emitter)
         ? query.emitter
-        : query.emitter ? [query.emitter] : [];
+        : query.emitter
+          ? [query.emitter]
+          : [];
       const topics = Array.isArray(query.topic)
         ? query.topic
-        : query.topic ? [query.topic] : [];
+        : query.topic
+          ? [query.topic]
+          : [];
 
       function buildUrl(f: bigint, t: bigint, useCache: boolean) {
         const url = new URL(`${TRUEBLOCKS_URL}/blocks`);
@@ -177,7 +191,8 @@ new Elysia()
         url.searchParams.set("chain", cfg.name);
         url.searchParams.set("logs", "true");
         url.searchParams.set("cache", useCache ? "true" : "false");
-        for (const address of emitters) url.searchParams.append("emitter", address);
+        for (const address of emitters)
+          url.searchParams.append("emitter", address);
         for (const topic of topics) url.searchParams.append("topic", topic);
         return url;
       }

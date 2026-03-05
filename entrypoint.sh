@@ -10,8 +10,10 @@ for chain in $chains; do
     manifest="/unchained/${chain}/manifest.json"
     if [ ! -f "$manifest" ]; then
         echo "No manifest found for chain '${chain}', running chifra init..."
-        chifra init --chain "$chain"
+        chifra init --chain "$chain" &
     fi
 done
+
+wait
 
 exec chifra daemon --url 0.0.0.0:8080
