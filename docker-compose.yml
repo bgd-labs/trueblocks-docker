@@ -9,6 +9,7 @@ services:
         condition: service_healthy
     expose:
       - "3000"
+    init: true
     restart: unless-stopped
     volumes:
       - type: volume
@@ -39,6 +40,7 @@ services:
       - type: volume
         source: unchained
         target: /unchained
+    init: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
