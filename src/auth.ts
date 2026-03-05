@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import users from "./users.json";
+import users from "../users.json";
 
 const tokens = new Set(Object.values(users));
 
