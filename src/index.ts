@@ -242,9 +242,7 @@ new Elysia()
         cfg.safetyDistance;
       const emitters = Array.isArray(query.emitter)
         ? query.emitter
-        : query.emitter
-          ? [query.emitter]
-          : [];
+        : [query.emitter];
       const topics = Array.isArray(query.topic)
         ? query.topic
         : query.topic
@@ -254,15 +252,17 @@ new Elysia()
       async function fetchBlocks(f: bigint, t: bigint, safe: boolean) {
         return pRetry(
           async () => {
-            const { data, error } = await trueblocks.GET("/blocks", {
+            const { data, error } = await trueblocks.GET("/export", {
               params: {
                 query: {
-                  blocks: [`${f}-${t}`],
+                  addrs: emitters,
                   chain: cfg.name,
                   logs: true,
                   cache: safe,
-                  emitter: emitters.length ? emitters : undefined,
+                  emitter: emitters,
                   topic: topics.length ? topics : undefined,
+                  firstBlock: Number(f),
+                  lastBlock: Number(t),
                 },
               },
             });
@@ -311,11 +311,9 @@ new Elysia()
           description:
             "End block number (inclusive); swapped with `from` if smaller",
         }),
-        emitter: t.Optional(
-          t.Union([t.Array(t.String()), t.String()], {
-            description: "Filter by emitting contract address(es)",
-          }),
-        ),
+        emitter: t.Union([t.Array(t.String()), t.String()], {
+          description: "Emitting contract address(es) to query",
+        }),
         topic: t.Optional(
           t.Union([t.Array(t.String()), t.String()], {
             description: "Filter by log topic(s)",

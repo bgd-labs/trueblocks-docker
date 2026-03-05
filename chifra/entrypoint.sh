@@ -17,6 +17,15 @@ done
 wait
 
 set +e
+
+for chain in $chains; do
+    while true; do
+        chifra scrape --chain "$chain"
+        echo "chifra scrape for $chain exited with $?, restarting in 5s..."
+        sleep 5
+    done &
+done
+
 while true; do
     chifra daemon --verbose --url 0.0.0.0:8080
     echo "chifra daemon exited with $?, restarting in 2s..."
