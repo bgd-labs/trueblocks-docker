@@ -156,7 +156,6 @@ new Elysia()
           },
         },
       });
-      console.log("status raw:", JSON.stringify({ data, error }));
       if (error) return status(502, JSON.stringify(error));
       const stat = (data?.data ?? [])[0] as
         | {
@@ -170,15 +169,17 @@ new Elysia()
             }>;
           }
         | undefined;
-      return (stat?.caches ?? []).map((c) => ({
-        type: c.type,
-        path: c.path,
-        nFiles: c.nFiles,
-        nFolders: c.nFolders,
-        sizeInBytes: c.sizeInBytes,
-        size: humanSize(c.sizeInBytes ?? 0),
-        lastCached: c.lastCached,
-      }));
+      return (stat?.caches ?? [])
+        .filter((c) => c.path)
+        .map((c) => ({
+          type: c.type,
+          path: c.path,
+          nFiles: c.nFiles,
+          nFolders: c.nFolders,
+          sizeInBytes: c.sizeInBytes,
+          size: humanSize(c.sizeInBytes ?? 0),
+          lastCached: c.lastCached,
+        }));
     },
     {
       params: t.Object({ chainId: ChainId }),
