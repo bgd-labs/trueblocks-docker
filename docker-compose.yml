@@ -42,9 +42,9 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
-      interval: 30s
+      interval: 5s
       timeout: 5s
-      retries: 3
+      retries: 60
 
 volumes:
   cache:
