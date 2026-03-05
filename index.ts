@@ -51,6 +51,35 @@ function humanSize(bytes: number): string {
   return `${value.toFixed(2)} ${UNITS[unit]}`;
 }
 
+function buildUrl(
+  f: bigint,
+  t: bigint,
+  useCache: boolean,
+  chain: string,
+  emitters: string[] = [],
+  topics: string[] = [],
+) {
+  const url = new URL(`${TRUEBLOCKS_URL}/blocks`);
+  url.searchParams.set("blocks", `${f}-${t}`);
+  url.searchParams.set("chain", chain);
+  url.searchParams.set("logs", "true");
+  url.searchParams.set("cache", useCache ? "true" : "false");
+  for (const address of emitters) url.searchParams.append("emitter", address);
+  for (const topic of topics) url.searchParams.append("topic", topic);
+  return url;
+}
+
+async function fetchUrl(url: URL) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(await response.text());
+  const json = (await response.json()) as {
+    data: Array<{ date?: unknown } & Record<string, unknown>>;
+  };
+  return (json.data ?? []).map(
+    ({ date: _, ...log }) => log,
+  ) as unknown as Array<typeof Log.static>;
+}
+
 const Log = t.Object({
   address: t.String(),
   blockHash: t.String(),
@@ -164,40 +193,25 @@ new Elysia()
           ? [query.topic]
           : [];
 
-      function buildUrl(f: bigint, t: bigint, useCache: boolean) {
-        const url = new URL(`${TRUEBLOCKS_URL}/blocks`);
-        url.searchParams.set("blocks", `${f}-${t}`);
-        url.searchParams.set("chain", cfg.name);
-        url.searchParams.set("logs", "true");
-        url.searchParams.set("cache", useCache ? "true" : "false");
-        for (const address of emitters)
-          url.searchParams.append("emitter", address);
-        for (const topic of topics) url.searchParams.append("topic", topic);
-        return url;
-      }
-
-      async function fetchUrl(url: URL) {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(await response.text());
-        const json = (await response.json()) as {
-          data: Array<{ date?: unknown } & Record<string, unknown>>;
-        };
-        return (json.data ?? []).map(
-          ({ date: _, ...log }) => log,
-        ) as unknown as Array<typeof Log.static>;
-      }
-
       let logs: Array<typeof Log.static>;
       try {
         if (to <= safeBlock) {
           set.headers["Cache-Control"] = "public, max-age=31536000, immutable";
-          logs = await fetchUrl(buildUrl(from, to, true));
+          logs = await fetchUrl(
+            buildUrl(from, to, true, cfg.name, emitters, topics),
+          );
         } else if (from > safeBlock) {
-          logs = await fetchUrl(buildUrl(from, to, false));
+          logs = await fetchUrl(
+            buildUrl(from, to, false, cfg.name, emitters, topics),
+          );
         } else {
           const [safeLogs, unsafeLogs] = await Promise.all([
-            fetchUrl(buildUrl(from, safeBlock, true)),
-            fetchUrl(buildUrl(safeBlock + 1n, to, false)),
+            fetchUrl(
+              buildUrl(from, safeBlock, true, cfg.name, emitters, topics),
+            ),
+            fetchUrl(
+              buildUrl(safeBlock + 1n, to, false, cfg.name, emitters, topics),
+            ),
           ]);
           logs = [...safeLogs, ...unsafeLogs];
         }
