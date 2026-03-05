@@ -228,7 +228,6 @@ new Elysia()
               cache: safe,
               emitter: emitters.length ? emitters : undefined,
               topic: topics.length ? topics : undefined,
-              bigRange: true,
             },
           },
         });
