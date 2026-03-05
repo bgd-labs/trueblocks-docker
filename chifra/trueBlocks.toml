@@ -8,7 +8,7 @@
 
 [keys]
   [keys.etherscan]
-    apiKey = ""
+    apiKey = "RF6Z521XGTT83IWYUV6F1U93RCM419MYMX"
 
 [chains]
   [chains.mainnet]
