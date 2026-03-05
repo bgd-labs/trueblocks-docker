@@ -11,10 +11,10 @@ if (!chainId) {
   process.exit(1);
 }
 
-const throttle = pThrottle({ limit: 2, interval: 1000 });
+const throttle = pThrottle({ limit: 1, interval: 1000 });
 
 const fetchRange = throttle(async (from: number, to: number) => {
-  const url = `${BASE_URL}/${chainId}/logs?from=${from}&to=${to}&token=${TOKEN}`;
+  const url = `${BASE_URL}/${chainId}/logs?from=${from}&to=${to}&token=${TOKEN}&emitter=0x0000000000000000000000000000000000000000`;
   while (true) {
     const res = await fetch(url);
     if (res.status === 429 || res.status === 502) {
