@@ -100,31 +100,7 @@ new Elysia()
       run: () => refreshHeads(Object.values(config.chains)),
     }),
   )
-  .use(
-    openapi({
-      documentation: {
-        info: { title: "TrueBlocks API", version: "1.0.0" },
-        components: {
-          securitySchemes: {
-            bearerAuth: { type: "http", scheme: "bearer" },
-          },
-        },
-        security: [{ bearerAuth: [] }],
-      },
-    }),
-  )
   .get("/", ({ redirect }) => redirect("/openapi"))
-  .use(
-    rateLimit({
-      max: 60,
-      duration: 60_000,
-      generator: (req) =>
-        req.headers.get("authorization")?.slice(7) ??
-        req.headers.get("authorization") ??
-        "",
-    }),
-  )
-  .use(auth)
   .get(
     "/:chainId/stats",
     async ({ params }) => {
@@ -163,6 +139,30 @@ new Elysia()
       },
     },
   )
+  .use(
+    openapi({
+      documentation: {
+        info: { title: "TrueBlocks API", version: "1.0.0" },
+        components: {
+          securitySchemes: {
+            bearerAuth: { type: "http", scheme: "bearer" },
+          },
+        },
+        security: [{ bearerAuth: [] }],
+      },
+    }),
+  )
+  .use(
+    rateLimit({
+      max: 60,
+      duration: 60_000,
+      generator: (req) =>
+        req.headers.get("authorization")?.slice(7) ??
+        req.headers.get("authorization") ??
+        "",
+    }),
+  )
+  .use(auth)
   .get(
     "/:chainId/logs",
     async ({ params, query, status, set }) => {
