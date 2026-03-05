@@ -1,6 +1,7 @@
 import { cron } from "@elysiajs/cron";
 import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
+import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
 import { auth } from "./auth";
 import { estimatedHead, refreshHeads } from "./chainHeads";
@@ -80,6 +81,7 @@ const Log = t.Object({
 });
 
 new Elysia()
+  .use(logger())
   .use(
     cron({
       name: "refreshHeads",
