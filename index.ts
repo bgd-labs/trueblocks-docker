@@ -57,7 +57,7 @@ new Elysia()
   .use(auth)
   .get(
     "/:chainId/logs",
-    async ({ params, query, status }) => {
+    async ({ params, query, status, set }) => {
       const chain = CHAIN_NAMES[params.chainId];
       if (!chain) {
         return status(400, `Unsupported chainId: ${params.chainId}`);
@@ -89,6 +89,8 @@ new Elysia()
       if (!response.ok) {
         return status(502, await response.text());
       }
+      set.headers["Cache-Control"] = "public, max-age=31536000, immutable";
+
       const json = (await response.json()) as {
         data: Array<{ date?: unknown } & Record<string, unknown>>;
       };
