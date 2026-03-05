@@ -3,7 +3,7 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
 import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
-import { auth } from "./auth";
+import { tokenSet } from "./auth";
 import { estimatedHead, refreshHeads } from "./chainHeads";
 import { trueblocks } from "./trueblocks-client";
 
@@ -179,7 +179,6 @@ new Elysia()
       generator: (req) => new URL(req.url).searchParams.get("token") ?? "",
     }),
   )
-  .use(auth)
   .get(
     "/:chainId/logs",
     async ({ params, query, status, set }) => {
@@ -254,6 +253,11 @@ new Elysia()
       return logs;
     },
     {
+      beforeHandle: ({ query, status }) => {
+        const token = (query as unknown as Record<string, string | undefined>)
+          .token;
+        if (!token || !tokenSet.has(token)) return status(401, "Unauthorized");
+      },
       params: t.Object({ chainId: ChainId }),
       query: t.Object({
         from: t.Numeric({ description: "Start block number (inclusive)" }),
