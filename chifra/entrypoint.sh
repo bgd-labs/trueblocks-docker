@@ -1,9 +1,4 @@
 #!/bin/sh
-set -e
-
-echo "Initializing mainnet index (--all)..."
-chifra init --all --chain mainnet
-
 set +e
 
 while true; do
