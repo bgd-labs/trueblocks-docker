@@ -130,7 +130,31 @@ new Elysia()
       // biome-ignore lint/style/noNonNullAssertion: that is how we defined the type of CHAIN_CONFIG
       const chain = CHAIN_CONFIG[params.chainId]!.name;
       const { data, error } = await trueblocks.GET("/status", {
-        params: { query: { chain, modes: ["index"], caches: true } },
+        params: {
+          query: {
+            chain,
+            modes: [
+              "index",
+              "blooms",
+              "blocks",
+              "transactions",
+              "traces",
+              "logs",
+              "statements",
+              "results",
+              "state",
+              "tokens",
+              "monitors",
+              "names",
+              "abis",
+              "slurps",
+              "staging",
+              "unripe",
+              "maps",
+            ],
+            caches: true,
+          },
+        },
       });
       console.log("status raw:", JSON.stringify({ data, error }));
       if (error) return status(502, JSON.stringify(error));
