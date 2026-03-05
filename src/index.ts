@@ -133,6 +133,7 @@ new Elysia()
         params: { query: { chain, modes: ["some"], caches: true } },
       });
       if (error) return status(502, JSON.stringify(error));
+      console.log("status response:", JSON.stringify(data?.data));
       const stat = (data?.data ?? [])[0] as
         | {
             caches?: Array<{
