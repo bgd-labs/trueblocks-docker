@@ -89,6 +89,35 @@ new Elysia()
   )
   .get("/", ({ redirect }) => redirect("/openapi"))
   .get(
+    "/chains",
+    () =>
+      Object.entries(CHAIN_CONFIG).map(
+        ([chainId, { name, safetyDistance, blockTimeMs }]) => ({
+          chainId,
+          name,
+          safetyDistance: Number(safetyDistance),
+          blockTimeMs,
+        }),
+      ),
+    {
+      response: {
+        200: t.Array(
+          t.Object({
+            chainId: t.String({ description: "EIP-155 chain ID" }),
+            name: t.String({ description: "Chain name used internally" }),
+            safetyDistance: t.Number({
+              description:
+                "Number of blocks behind the head considered safe from reorgs",
+            }),
+            blockTimeMs: t.Number({
+              description: "Approximate block time in milliseconds",
+            }),
+          }),
+        ),
+      },
+    },
+  )
+  .get(
     "/:chainId/stats",
     async ({ params }) => {
       // biome-ignore lint/style/noNonNullAssertion: that is how we defined the type of CHAIN_CONFIG
