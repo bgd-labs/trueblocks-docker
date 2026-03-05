@@ -18,8 +18,7 @@ async function fetchRange(from: number, to: number): Promise<void> {
   while (true) {
     const res = await fetch(url);
     if (res.status === 429 || res.status === 502) {
-      console.warn(`${res.status} ${from}-${to}, retrying in 5s...`);
-      await Bun.sleep(5000);
+      console.warn(`${res.status} ${from}-${to}, retrying...`);
       continue;
     }
     if (!res.ok) {
