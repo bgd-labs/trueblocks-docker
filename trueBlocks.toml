@@ -17,6 +17,8 @@
     symbol = "ETH"
     rpcProviders = ["https://1.rpc.hypersync.xyz/b5c5baee-7507-451c-bcfb-f0d1e790a5ab"]
     remoteExplorer = "https://etherscan.io"
+    safetyDistance = 128
+    blockTimeMs = 12000
 
   [chains.arbitrum]
     chain = "arbitrum"
@@ -24,3 +26,5 @@
     symbol = "ETH"
     rpcProviders = ["https://42161.rpc.hypersync.xyz/b5c5baee-7507-451c-bcfb-f0d1e790a5ab"]
     remoteExplorer = "https://arbiscan.io"
+    safetyDistance = 1000
+    blockTimeMs = 250
