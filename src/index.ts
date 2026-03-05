@@ -281,10 +281,8 @@ new Elysia()
         } else if (from > safeBlock) {
           logs = await fetchBlocks(from, to, false);
         } else {
-          const [safeLogs, unsafeLogs] = await Promise.all([
-            fetchBlocks(from, safeBlock, true),
-            fetchBlocks(safeBlock + 1n, to, false),
-          ]);
+          const safeLogs = await fetchBlocks(from, safeBlock, true);
+          const unsafeLogs = await fetchBlocks(safeBlock + 1n, to, false);
           logs = [...safeLogs, ...unsafeLogs];
         }
       } catch (err) {
