@@ -3,11 +3,15 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "generate": "openapi-typescript openapi.yaml -o trueblocks.d.ts"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260305.1",
-    "lefthook": "^2.1.2"
+    "lefthook": "^2.1.2",
+    "openapi-typescript": "^7.13.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -16,6 +20,7 @@
     "@elysiajs/cron": "^1.4.1",
     "@elysiajs/openapi": "^1.4.14",
     "elysia": "^1.4.27",
-    "elysia-rate-limit": "^4.5.0"
+    "elysia-rate-limit": "^4.5.0",
+    "openapi-fetch": "^0.17.0"
   }
 }

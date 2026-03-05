@@ -4,8 +4,8 @@ import { Elysia, t } from "elysia";
 import { rateLimit } from "elysia-rate-limit";
 import { auth } from "./auth";
 import { estimatedHead, refreshHeads } from "./chainHeads";
+import { trueblocks } from "./trueblocks-client";
 
-const TRUEBLOCKS_URL = process.env.TRUEBLOCKS_URL ?? "http://trueblocks:8080";
 const MAX_BLOCK_RANGE = 100_000n;
 
 const TOML_PATH = process.env.TRUEBLOCKS_CONFIG ?? "./trueBlocks.toml";
@@ -51,34 +51,6 @@ function humanSize(bytes: number): string {
   return `${value.toFixed(2)} ${UNITS[unit]}`;
 }
 
-function buildUrl(
-  f: bigint,
-  t: bigint,
-  useCache: boolean,
-  chain: string,
-  emitters: string[] = [],
-  topics: string[] = [],
-) {
-  const url = new URL(`${TRUEBLOCKS_URL}/blocks`);
-  url.searchParams.set("blocks", `${f}-${t}`);
-  url.searchParams.set("chain", chain);
-  url.searchParams.set("logs", "true");
-  url.searchParams.set("cache", useCache ? "true" : "false");
-  for (const address of emitters) url.searchParams.append("emitter", address);
-  for (const topic of topics) url.searchParams.append("topic", topic);
-  return url;
-}
-
-async function fetchUrl(url: URL) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(await response.text());
-  const json = (await response.json()) as {
-    data: Array<{ date?: unknown } & Record<string, unknown>>;
-  };
-  return (json.data ?? []).map(
-    ({ date: _, ...log }) => log,
-  ) as unknown as Array<typeof Log.static>;
-}
 
 const Log = t.Object({
   address: t.String(),
@@ -193,25 +165,40 @@ new Elysia()
           ? [query.topic]
           : [];
 
+      async function fetchBlocks(f: bigint, t: bigint, useCache: boolean) {
+        const { data, error } = await trueblocks.GET("/blocks", {
+          params: {
+            query: {
+              blocks: [`${f}-${t}`],
+              chain: cfg.name,
+              logs: true,
+              cache: useCache,
+              emitter: emitters.length ? emitters : undefined,
+              topic: topics.length ? topics : undefined,
+            },
+          },
+        });
+        if (error) throw new Error(JSON.stringify(error));
+        return (
+          (data?.data ?? []) as Array<
+            { date?: unknown } & Record<string, unknown>
+          >
+        ).map(({ date: _, ...log }) => log) as unknown as Array<
+          typeof Log.static
+        >;
+      }
+
       let logs: Array<typeof Log.static>;
       try {
         if (to <= safeBlock) {
           set.headers["Cache-Control"] = "public, max-age=31536000, immutable";
-          logs = await fetchUrl(
-            buildUrl(from, to, true, cfg.name, emitters, topics),
-          );
+          logs = await fetchBlocks(from, to, true);
         } else if (from > safeBlock) {
-          logs = await fetchUrl(
-            buildUrl(from, to, false, cfg.name, emitters, topics),
-          );
+          logs = await fetchBlocks(from, to, false);
         } else {
           const [safeLogs, unsafeLogs] = await Promise.all([
-            fetchUrl(
-              buildUrl(from, safeBlock, true, cfg.name, emitters, topics),
-            ),
-            fetchUrl(
-              buildUrl(safeBlock + 1n, to, false, cfg.name, emitters, topics),
-            ),
+            fetchBlocks(from, safeBlock, true),
+            fetchBlocks(safeBlock + 1n, to, false),
           ]);
           logs = [...safeLogs, ...unsafeLogs];
         }
