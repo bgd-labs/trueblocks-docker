@@ -58,6 +58,18 @@ setInterval(refreshHeads, 2 * 60 * 1000);
 
 const ChainId = t.Union(Object.keys(CHAIN_CONFIG).map((id) => t.Literal(id)));
 
+const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
+
+function humanSize(bytes: number): string {
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < UNITS.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(2)} ${UNITS[unit]}`;
+}
+
 const Log = t.Object({
   address: t.String(),
   blockHash: t.String(),
@@ -101,15 +113,26 @@ new Elysia()
     async ({ params }) => {
       const chain = CHAIN_CONFIG[params.chainId]?.name ?? "";
       const volumes = ["/cache", "/unchained"] as const;
-      const result: Record<string, number> = {};
+      const result: Record<string, Record<string, string>> = {};
 
       for (const volume of volumes) {
-        let size = 0;
-        const glob = new Bun.Glob("**");
-        for await (const file of glob.scan({ cwd: `${volume}/${chain}` })) {
-          size += (await Bun.file(`${volume}/${chain}/${file}`).stat()).size;
+        const dirs: Record<string, string> = {};
+        const topGlob = new Bun.Glob("*");
+        for await (const dir of topGlob.scan({
+          cwd: `${volume}/${chain}`,
+          onlyFiles: false,
+        })) {
+          let size = 0;
+          const inner = new Bun.Glob("**");
+          for await (const file of inner.scan({
+            cwd: `${volume}/${chain}/${dir}`,
+          })) {
+            size += (await Bun.file(`${volume}/${chain}/${dir}/${file}`).stat())
+              .size;
+          }
+          dirs[dir] = humanSize(size);
         }
-        result[volume] = size;
+        result[volume] = dirs;
       }
 
       return result;
@@ -117,7 +140,7 @@ new Elysia()
     {
       params: t.Object({ chainId: ChainId }),
       response: {
-        200: t.Record(t.String(), t.Number()),
+        200: t.Record(t.String(), t.Record(t.String(), t.String())),
         401: t.String(),
       },
     },
