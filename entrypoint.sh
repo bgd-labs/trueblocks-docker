@@ -16,4 +16,4 @@ done
 
 wait
 
-exec chifra daemon --url 0.0.0.0:8080
+exec chifra daemon --verbose --url 0.0.0.0:8080
