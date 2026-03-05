@@ -3,6 +3,7 @@ import { openapi } from "@elysiajs/openapi";
 import { Elysia, t } from "elysia";
 import { rateLimit } from "elysia-rate-limit";
 import { auth } from "./auth";
+import { estimatedHead, refreshHeads } from "./chainHeads";
 
 const TRUEBLOCKS_URL = process.env.TRUEBLOCKS_URL ?? "http://trueblocks:8080";
 const MAX_BLOCK_RANGE = 100_000n;
@@ -34,34 +35,7 @@ const CHAIN_CONFIG: Record<
   ),
 );
 
-type HeadInfo = { height: number; fetchedAt: number };
-const chainHeads = new Map<string, HeadInfo>();
-
-async function fetchHeight(chainId: string): Promise<number> {
-  const res = await fetch(`https://${chainId}.hypersync.xyz/height`);
-  const json = (await res.json()) as { height: number };
-  return json.height;
-}
-
-function estimatedHead(chainId: string, blockTimeMs: number): number {
-  const head = chainHeads.get(chainId);
-  if (!head) return 0;
-  const elapsed = Date.now() - head.fetchedAt;
-  return head.height + Math.floor(elapsed / blockTimeMs);
-}
-
-async function refreshHeads() {
-  for (const { chainId } of Object.values(config.chains)) {
-    try {
-      const height = await fetchHeight(chainId);
-      chainHeads.set(chainId, { height, fetchedAt: Date.now() });
-    } catch (err) {
-      console.error(`Failed to fetch head for chain ${chainId}:`, err);
-    }
-  }
-}
-
-await refreshHeads();
+await refreshHeads(Object.values(config.chains));
 
 const ChainId = t.Union(Object.keys(CHAIN_CONFIG).map((id) => t.Literal(id)));
 
@@ -94,7 +68,7 @@ new Elysia()
     cron({
       name: "refreshHeads",
       pattern: "*/2 * * * *",
-      run: refreshHeads,
+      run: () => refreshHeads(Object.values(config.chains)),
     }),
   )
   .use(
