@@ -276,6 +276,7 @@ class LogFlusher {
     if (this.flushError) throw this.flushError;
   }
 }
+
 type LogFilter =
   | { type: "include"; addresses: string[] }
   | { type: "exclude"; addresses: string[] }
@@ -337,17 +338,32 @@ async function runStream({
 
   let totalLogs = 0;
   let lastBlock = fromBlock;
+  const totalBlocks = toBlock - fromBlock;
+  let lastProgressLog = Date.now();
 
   try {
     while (true) {
       const res: QueryResponse | null = await receiver.recv();
 
       if (res === null) {
-        // Stream exhausted – we have reached the chain tip.
         break;
       }
 
       lastBlock = res.nextBlock;
+
+      const now = Date.now();
+      if (now - lastProgressLog >= 10_000) {
+        const blocksProcessed = lastBlock - fromBlock;
+        const pct =
+          totalBlocks > 0
+            ? ((blocksProcessed / totalBlocks) * 100).toFixed(1)
+            : "100.0";
+        log.info(
+          { nextBlock: lastBlock, toBlock, pct: `${pct}%`, totalLogs },
+          "progress",
+        );
+        lastProgressLog = now;
+      }
 
       const timestamps = buildTimestampMap(res.data.blocks);
       const batch = res.data.logs.map((log) =>
