@@ -30,7 +30,7 @@
     chain = 'mainnet'
     chainId = '1'
     remoteExplorer = 'https://etherscan.io'
-    rpcProviders = ['https://1.rpc.hypersync.xyz/b5c5baee-7507-451c-bcfb-f0d1e790a5ab']
+    rpcProviders = ['https://eth-mainnet.g.alchemy.com/v2/bOaqQ2vnj5G4_zicOm8_W']
     symbol = 'ETH'
     safetyDistance = 128
     blockTime = 12.0

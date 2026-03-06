@@ -26,7 +26,7 @@ RUN apk --no-cache add gzip libstdc++ libgcc libcurl python3 python3-dev procps 
 
 COPY --from=builder /root/trueblocks-core/bin/chifra /usr/local/bin/chifra
 
-RUN mkdir -p /root/.local/share/trueblocks/config/mainnet
+COPY --from=builder /root/.local/share/trueblocks /root/.local/share/trueblocks
 COPY chifra/trueBlocks.toml /root/.local/share/trueblocks/trueBlocks.toml
 
 COPY chifra/entrypoint.sh /entrypoint.sh
