@@ -6,8 +6,8 @@ import {
   type Log,
   type QueryResponse,
 } from "@envio-dev/hypersync-client";
+import { CHAIN_BY_ID } from "./chains";
 
-const HYPERSYNC_URL = "https://eth.hypersync.xyz";
 const HYPERSYNC_API_KEY = "b5c5baee-7507-451c-bcfb-f0d1e790a5ab";
 const CHAIN_ID = 1; // Ethereum mainnet
 
@@ -200,9 +200,11 @@ async function runStream(
   hypersync: HypersyncClient,
   chainId: number,
   fromBlock: number,
+  toBlock: number,
 ): Promise<number> {
   const query = {
     fromBlock,
+    toBlock,
     // Empty LogFilter matches every log on the chain.
     logs: [{}],
     fieldSelection: {
@@ -304,6 +306,9 @@ async function runStream(
 }
 
 async function main(): Promise<void> {
+  const chain = CHAIN_BY_ID.get(CHAIN_ID);
+  if (!chain) throw new Error(`Chain ${CHAIN_ID} not found in chains config`);
+
   const clickhouse = createClient({
     url: CLICKHOUSE_URL,
     username: "default",
@@ -316,7 +321,7 @@ async function main(): Promise<void> {
   });
 
   const hypersync = new HypersyncClient({
-    url: HYPERSYNC_URL,
+    url: chain.hypersyncUrl,
     apiToken: HYPERSYNC_API_KEY,
   });
 
@@ -325,11 +330,25 @@ async function main(): Promise<void> {
   let startBlock = await getStartBlock(clickhouse, CHAIN_ID);
   console.log(`Resuming from block ${startBlock.toLocaleString()}`);
 
-  // Continuous loop: stream until chain tip, then poll for new blocks.
+  // Continuous loop: stream up to the reorg-safe tip, then poll for new blocks.
   while (true) {
-    startBlock = await runStream(hypersync, CHAIN_ID, startBlock);
+    const tip = await hypersync.getHeight();
+    const safeBlock = Math.max(startBlock, tip - chain.reorgSafetyBlocks);
+
+    if (safeBlock <= startBlock) {
+      console.log(
+        `At reorg-safe tip (tip=${tip.toLocaleString()}, safety=${chain.reorgSafetyBlocks} blocks). Polling again in ${POLL_INTERVAL_SECS}s…`,
+      );
+      await Bun.sleep(POLL_INTERVAL_SECS * 1000);
+      continue;
+    }
+
     console.log(
-      `Caught up to chain tip. Polling again in ${POLL_INTERVAL_SECS}s…`,
+      `Streaming blocks ${startBlock.toLocaleString()}–${safeBlock.toLocaleString()} (tip=${tip.toLocaleString()}, safety=${chain.reorgSafetyBlocks})`,
+    );
+    startBlock = await runStream(hypersync, CHAIN_ID, startBlock, safeBlock);
+    console.log(
+      `Caught up to safe tip. Polling again in ${POLL_INTERVAL_SECS}s…`,
     );
     await Bun.sleep(POLL_INTERVAL_SECS * 1000);
   }

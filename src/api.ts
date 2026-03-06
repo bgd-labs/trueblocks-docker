@@ -4,34 +4,12 @@ import { Elysia, t } from "elysia";
 import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
 import { tokenSet } from "./auth";
+import { CHAIN_BY_ID } from "./chains";
 
 const DEFAULT_LIMIT = 1_000;
 const MAX_LIMIT = 50_000;
 
 const CLICKHOUSE_URL = "http://localhost:8123";
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  10: "OP Mainnet",
-  56: "BNB Smart Chain",
-  100: "Gnosis",
-  137: "Polygon",
-  146: "Sonic",
-  324: "ZKsync Era",
-  1088: "Metis",
-  1868: "Soneium Mainnet",
-  4326: "MegaETH",
-  5000: "Mantle",
-  8453: "Base",
-  9745: "Plasma",
-  42161: "Arbitrum One",
-  42220: "Celo",
-  43114: "Avalanche",
-  57073: "Ink",
-  59144: "Linea Mainnet",
-  84532: "Base Sepolia",
-  534352: "Scroll",
-};
 
 const clickhouse = createClient({
   url: CLICKHOUSE_URL,
@@ -141,7 +119,7 @@ new Elysia()
       const rows = await result.json<{ chain_id: string }>();
       return rows.map(({ chain_id }) => {
         const id = Number(chain_id);
-        return { id, name: CHAIN_NAMES[id] ?? `chain-${id}` };
+        return { id, name: CHAIN_BY_ID.get(id)?.name ?? `chain-${id}` };
       });
     },
     {
