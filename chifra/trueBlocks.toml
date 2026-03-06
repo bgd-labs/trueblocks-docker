@@ -42,3 +42,20 @@
       unripeDist = 0
       allowMissing = false
       channelCount = 0
+
+  [chains.arbitrum]
+    chain = 'arbitrum'
+    chainId = '42161'
+    remoteExplorer = 'https://arbiscan.io'
+    rpcProviders = ['https://arb-mainnet.g.alchemy.com/v2/jzYlL3uXkwHXFS0rlxjjb']
+    symbol = 'ETH'
+    safetyDistance = 128
+    blockTime = 0.25
+
+    [chains.arbitrum.scrape]
+      appsPerChunk = 0
+      snapToGrid = 0
+      firstSnap = 0
+      unripeDist = 0
+      allowMissing = false
+      channelCount = 0

@@ -1,7 +1,8 @@
 #!/bin/sh
 set +e
 
-chifra init --all
+chifra init --all &
+chifra init --all --chain arbitrum &
 
 while true; do
     chifra daemon --verbose --url 0.0.0.0:8080
