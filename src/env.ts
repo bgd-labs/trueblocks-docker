@@ -12,5 +12,7 @@ const raw = arkenv({
 
 export default {
   ...raw,
-  CLICKHOUSE_URL: raw.CLICKHOUSE_URL.replace(/^clickhouse:\/\//, "http://"),
+  CLICKHOUSE_URL: raw.CLICKHOUSE_URL
+    .replace(/^clickhouse:\/\//, "http://")
+    .replace(/:9000(\/|$)/, ":8123$1"),
 };
