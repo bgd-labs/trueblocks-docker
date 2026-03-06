@@ -167,19 +167,21 @@ function serializeBatch(rows: LogRow[]): Buffer {
   return buf;
 }
 
-async function getStartBlock(
+async function getChainState(
   clickhouse: ReturnType<typeof createClient>,
   chainId: number,
-): Promise<number> {
+): Promise<{ startBlock: number; totalLogs: number }> {
   const result = await clickhouse.query({
-    query: `SELECT max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = ${chainId}`,
+    query: `SELECT max(block_number) AS max_block, count() AS total_logs FROM ethereum.logs WHERE chain_id = ${chainId}`,
     format: "JSONEachRow",
   });
-  const rows = await result.json<{ max_block: string }>();
-  const maxBlock = Number(rows[0]?.max_block ?? 0);
+  const rows = await result.json<{ max_block: string; total_logs: string }>();
   // Re-include the last indexed block in case the process crashed mid-block.
   // ReplacingMergeTree deduplicates any overlapping rows on merge.
-  return maxBlock;
+  return {
+    startBlock: Number(rows[0]?.max_block ?? 0),
+    totalLogs: Number(rows[0]?.total_logs ?? 0),
+  };
 }
 
 async function flushBatch(batch: LogRow[], log: pino.Logger): Promise<void> {
@@ -202,8 +204,9 @@ async function runStream(
   chainId: number,
   fromBlock: number,
   toBlock: number,
+  initialTotalLogs: number,
   log: pino.Logger,
-): Promise<number> {
+): Promise<{ nextBlock: number; totalLogs: number }> {
   const query = {
     fromBlock,
     toBlock,
@@ -232,7 +235,7 @@ async function runStream(
   const receiver = await hypersync.stream(query, {});
 
   let batch: LogRow[] = [];
-  let totalLogs = 0;
+  let totalLogs = initialTotalLogs;
   let lastBlock = fromBlock;
   let lastFlushAt = Date.now();
 
@@ -300,7 +303,7 @@ async function runStream(
 
   log.info({ totalLogs, nextBlock: lastBlock }, "stream finished");
 
-  return lastBlock;
+  return { nextBlock: lastBlock, totalLogs };
 }
 
 async function main(): Promise<void> {
@@ -325,8 +328,8 @@ async function main(): Promise<void> {
     apiToken: HYPERSYNC_API_KEY,
   });
 
-  let startBlock = await getStartBlock(clickhouse, CHAIN_ID);
-  log.info({ startBlock }, "connected, resuming ingestion");
+  let { startBlock, totalLogs } = await getChainState(clickhouse, CHAIN_ID);
+  log.info({ startBlock, totalLogs }, "connected, resuming ingestion");
 
   // Continuous loop: stream up to the reorg-safe tip, then poll for new blocks.
   while (true) {
@@ -351,13 +354,14 @@ async function main(): Promise<void> {
       },
       "streaming",
     );
-    startBlock = await runStream(
+    ({ nextBlock: startBlock, totalLogs } = await runStream(
       hypersync,
       CHAIN_ID,
       startBlock,
       safeBlock,
+      totalLogs,
       log,
-    );
+    ));
     log.info("caught up to safe tip, polling");
     await Bun.sleep(POLL_INTERVAL_SECS * 1000);
   }
