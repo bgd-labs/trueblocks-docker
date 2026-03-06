@@ -440,6 +440,9 @@ try {
           }
         }
 
+        // One shared flusher for all streams this tick
+        const flusher = new LogFlusher(log, totalLogs);
+
         // Run for each safe address individually in parallel
         const queue = new PQueue({ concurrency: 5 });
         const streamPromises = safeAddresses.map((addr) =>
@@ -462,7 +465,6 @@ try {
                 },
                 "started streaming safe address individually",
               );
-              const flusher = new LogFlusher(log.child({ address: addr }));
               const res = await runStream(
                 hypersync,
                 env.CHAIN_ID,
@@ -472,7 +474,6 @@ try {
                 flusher,
                 [addr],
               );
-              await flusher.waitDrain();
               addressState.set(lower, res.nextBlock);
               log.info(
                 {
@@ -483,14 +484,11 @@ try {
                 },
                 "finished streaming safe address individually",
               );
-              return res.totalLogs;
             }
-            return 0;
           }),
         );
 
-        const logsSynced = await Promise.all(streamPromises);
-        totalLogs += logsSynced.reduce((a, b) => (a ?? 0) + (b ?? 0), 0);
+        await Promise.all(streamPromises);
 
         if (safeBlock > mainStartBlock) {
           log.info(
@@ -502,7 +500,6 @@ try {
             },
             "started streaming all logs",
           );
-          const flusher = new LogFlusher(log, totalLogs);
           const res = await runStream(
             hypersync,
             env.CHAIN_ID,
@@ -511,20 +508,19 @@ try {
             log,
             flusher,
           );
-          await flusher.waitDrain();
-          const logsSyncedInMain = res.totalLogs - totalLogs;
           mainStartBlock = res.nextBlock;
-          totalLogs = res.totalLogs;
-
           log.info(
             {
               fromBlock: mainStartBlock,
               toBlock: safeBlock,
-              logsSynced: logsSyncedInMain,
+              logsSynced: res.totalLogs,
             },
             "finished streaming all logs",
           );
         }
+
+        await flusher.waitDrain();
+        totalLogs = flusher.totalLogs;
 
         log.info("caught up to safe tip, waiting for next cron tick");
       } catch (err) {
