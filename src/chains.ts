@@ -1,4 +1,4 @@
-export interface ChainConfig {
+interface ChainConfig {
   readonly id: number;
   readonly name: string;
   readonly hypersyncUrl: string;
@@ -20,7 +20,7 @@ export interface ChainConfig {
   readonly reorgSafetyBlocks: number;
 }
 
-export const CHAINS = [
+const CHAINS = [
   {
     id: 1,
     name: "Ethereum",

@@ -9,7 +9,6 @@ import {
 } from "@envio-dev/hypersync-client";
 import { Cron } from "croner";
 import pino from "pino";
-import { keccak256, toBytes } from "viem";
 import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
 import { ensureSchema } from "./schema";
@@ -42,34 +41,6 @@ function buildTimestampMap(blocks: Block[]): Map<number, number> {
   for (const block of blocks) {
     if (block.number !== undefined && block.timestamp !== undefined) {
       map.set(block.number, block.timestamp);
-    }
-  }
-  return map;
-}
-
-// Ethereum bloom filter check (EIP-1559 / Yellow Paper).
-// Returns true if `value` (address or topic, as 0x-hex) is *possibly* in the bloom.
-// Never returns false for a value that IS in the bloom (no false negatives).
-function bloomContains(bloom: string, value: string): boolean {
-  const bloomBytes = Buffer.from(bloom.slice(2), "hex"); // 256 bytes
-  const hash = Buffer.from(
-    keccak256(toBytes(value as `0x${string}`)).slice(2),
-    "hex",
-  ); // 32 bytes
-  for (let i = 0; i < 3; i++) {
-    const bit = ((hash[i * 2] << 8) | hash[i * 2 + 1]) & 0x7ff;
-    const byteIndex = 255 - Math.floor(bit / 8);
-    const bitIndex = bit % 8;
-    if ((bloomBytes[byteIndex] & (1 << bitIndex)) === 0) return false;
-  }
-  return true;
-}
-
-function buildBloomMap(blocks: Block[]): Map<number, string> {
-  const map = new Map<number, string>();
-  for (const block of blocks) {
-    if (block.number !== undefined && block.logsBloom) {
-      map.set(block.number, block.logsBloom);
     }
   }
   return map;
@@ -332,7 +303,7 @@ async function runStream({
         "Topic2",
         "Topic3",
       ],
-      block: ["Number", "Timestamp", "LogsBloom"],
+      block: ["Number", "Timestamp"],
     },
     joinMode: JoinMode.Default,
   } satisfies Query;
@@ -371,17 +342,6 @@ async function runStream({
       }
 
       const timestamps = buildTimestampMap(res.data.blocks);
-      const blooms = buildBloomMap(res.data.blocks);
-
-      for (const l of res.data.logs) {
-        const bloom =
-          l.blockNumber !== undefined ? blooms.get(l.blockNumber) : undefined;
-        if (bloom && l.address && !bloomContains(bloom, l.address)) {
-          throw new Error(
-            `Bloom filter mismatch: address ${l.address} not in bloom for block ${l.blockNumber}. Data integrity error.`,
-          );
-        }
-      }
 
       const batch = res.data.logs.map((log) =>
         logToRow(log, chainId, timestamps),
