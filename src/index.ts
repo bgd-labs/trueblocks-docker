@@ -276,6 +276,11 @@ class LogFlusher {
     if (this.flushError) throw this.flushError;
   }
 }
+type LogFilter =
+  | { type: "include"; addresses: string[] }
+  | { type: "exclude"; addresses: string[] }
+  | { type: "all" };
+
 type RunStreamConfig = {
   hypersync: HypersyncClient;
   chainId: number;
@@ -283,7 +288,7 @@ type RunStreamConfig = {
   toBlock: number;
   log: pino.Logger;
   flusher: LogFlusher;
-  addresses?: string[];
+  filter?: LogFilter;
 };
 
 async function runStream({
@@ -293,13 +298,15 @@ async function runStream({
   toBlock,
   log,
   flusher,
-  addresses,
+  filter,
 }: RunStreamConfig): Promise<{ nextBlock: number; totalLogs: number }> {
+  const logsFilter =
+    filter?.type === "include" ? [{ address: filter.addresses }] : [{}]; // "all" and "exclude" both stream everything; exclude is handled post-insert by ClickHouse dedup
+
   const query = {
     fromBlock,
     toBlock,
-    // Empty LogFilter matches every log on the chain.
-    logs: addresses && addresses.length > 0 ? [{ address: addresses }] : [{}],
+    logs: logsFilter,
     fieldSelection: {
       log: [
         "Removed" as const,
@@ -483,7 +490,7 @@ try {
                 toBlock: addrSafeBlock,
                 log: log.child({ address: addr }),
                 flusher,
-                addresses: [addr],
+                filter: { type: "include", addresses: [addr] },
               });
               addressState.set(lower, res.nextBlock);
               log.info(
