@@ -9,6 +9,7 @@ import {
 import pino from "pino";
 import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
+import { ensureSchema } from "./schema";
 
 const FLUSH_BATCH_SIZE = 75_000;
 const FLUSH_INTERVAL_MS = 5_000;
@@ -345,6 +346,8 @@ async function main(): Promise<void> {
       wait_for_async_insert: 0,
     },
   });
+
+  await ensureSchema(clickhouse);
 
   const hypersync = new HypersyncClient({
     url: chain.hypersyncUrl,

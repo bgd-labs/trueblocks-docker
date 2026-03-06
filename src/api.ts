@@ -6,6 +6,7 @@ import { rateLimit } from "elysia-rate-limit";
 import { tokenSet } from "./auth";
 import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
+import { ensureSchema } from "./schema";
 
 const DEFAULT_LIMIT = 1_000;
 const MAX_LIMIT = 50_000;
@@ -16,6 +17,8 @@ const clickhouse = createClient({
   password: env.CLICKHOUSE_PASSWORD,
   database: env.CLICKHOUSE_DB,
 });
+
+await ensureSchema(clickhouse);
 
 const Log = t.Object({
   address: t.String({

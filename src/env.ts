@@ -21,9 +21,12 @@ const parsedUrl = new URL(
 
 const CLICKHOUSE_USERNAME = parsedUrl.username || "default";
 const CLICKHOUSE_PASSWORD = parsedUrl.password || "";
-// Explicit CLICKHOUSE_DB env var takes priority; URL path is the fallback.
-const CLICKHOUSE_DB =
-  raw.CLICKHOUSE_DB || parsedUrl.pathname.replace(/^\//, "");
+// Resolution order: explicit non-empty CLICKHOUSE_DB env var → database in
+// URL path → hard-coded default. This means a URL like
+// clickhouse://user:pass@host:9000/default won't silently win over an explicit
+// CLICKHOUSE_DB=ethereum, but an unset/empty var still falls back gracefully.
+const urlDb = parsedUrl.pathname.replace(/^\//, "");
+const CLICKHOUSE_DB = raw.CLICKHOUSE_DB || urlDb || "ethereum";
 
 // Strip credentials and path from the URL before handing it to the client.
 parsedUrl.username = "";
