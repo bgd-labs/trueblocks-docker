@@ -478,52 +478,66 @@ try {
           }
         }
 
+        // Group addresses by their start block — identical start blocks can be streamed together
+        const groups = new Map<number, string[]>();
+        for (const addr of safeAddresses) {
+          const lower = addr.toLowerCase();
+          const startBlock = addressState.get(lower) ?? 0;
+          const existing = groups.get(startBlock);
+          if (existing) {
+            existing.push(addr);
+          } else {
+            groups.set(startBlock, [addr]);
+          }
+        }
+
         // One shared flusher for all streams this tick
         const flusher = new LogFlusher(log, totalLogs);
 
-        // Run for each safe address individually in parallel
+        // Run groups in parallel (up to 5 concurrent streams)
         const queue = new PQueue({ concurrency: 5 });
-        const streamPromises = safeAddresses.map((addr) =>
-          queue.add(async () => {
-            const lower = addr.toLowerCase();
-            const addrStartBlock = addressState.get(lower) ?? 0;
-            const addrSafeBlock = Math.max(
-              addrStartBlock,
-              tip - chain.reorgSafetyBlocks,
-            );
+        const streamPromises = [...groups.entries()].map(
+          ([groupStartBlock, addrs]) =>
+            queue.add(async () => {
+              const groupSafeBlock = Math.max(
+                groupStartBlock,
+                tip - chain.reorgSafetyBlocks,
+              );
 
-            if (addrSafeBlock > addrStartBlock) {
-              log.info(
-                {
-                  address: addr,
-                  fromBlock: addrStartBlock,
-                  toBlock: addrSafeBlock,
-                  tip,
-                  reorgSafetyBlocks: chain.reorgSafetyBlocks,
-                },
-                "started streaming safe address individually",
-              );
-              const res = await runStream({
-                hypersync,
-                chainId: env.CHAIN_ID,
-                fromBlock: addrStartBlock,
-                toBlock: addrSafeBlock,
-                log: log.child({ address: addr }),
-                flusher,
-                filter: { type: "include", addresses: [addr] },
-              });
-              addressState.set(lower, res.nextBlock);
-              log.info(
-                {
-                  address: addr,
-                  fromBlock: addrStartBlock,
-                  toBlock: addrSafeBlock,
-                  logsSynced: res.totalLogs,
-                },
-                "finished streaming safe address individually",
-              );
-            }
-          }),
+              if (groupSafeBlock > groupStartBlock) {
+                log.info(
+                  {
+                    addresses: addrs,
+                    fromBlock: groupStartBlock,
+                    toBlock: groupSafeBlock,
+                    tip,
+                    reorgSafetyBlocks: chain.reorgSafetyBlocks,
+                  },
+                  "started streaming address group",
+                );
+                const res = await runStream({
+                  hypersync,
+                  chainId: env.CHAIN_ID,
+                  fromBlock: groupStartBlock,
+                  toBlock: groupSafeBlock,
+                  log: log.child({ addresses: addrs }),
+                  flusher,
+                  filter: { type: "include", addresses: addrs },
+                });
+                for (const addr of addrs) {
+                  addressState.set(addr.toLowerCase(), res.nextBlock);
+                }
+                log.info(
+                  {
+                    addresses: addrs,
+                    fromBlock: groupStartBlock,
+                    toBlock: groupSafeBlock,
+                    logsSynced: res.totalLogs,
+                  },
+                  "finished streaming address group",
+                );
+              }
+            }),
         );
 
         await Promise.all(streamPromises);
