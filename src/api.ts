@@ -5,7 +5,8 @@ import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
 import { tokenSet } from "./auth";
 
-const MAX_BLOCK_RANGE = 100_000;
+const DEFAULT_LIMIT = 1_000;
+const MAX_LIMIT = 50_000;
 
 const CLICKHOUSE_URL = "http://localhost:8123";
 
@@ -16,6 +17,9 @@ const CHAIN_NAMES: Record<number, string> = {
   100: "Gnosis",
   137: "Polygon",
   146: "Sonic",
+  324: "ZKsync Era",
+  1088: "Metis",
+  1868: "Soneium Mainnet",
   4326: "MegaETH",
   5000: "Mantle",
   8453: "Base",
@@ -58,32 +62,50 @@ const Log = t.Object({
 
 interface LogRow {
   block_number: string;
-  block_hash: string;
+  block_hash_hex: string;
   timestamp: string;
-  transaction_hash: string;
+  transaction_hash_hex: string;
   transaction_index: string;
   log_index: string;
-  address: string;
-  data: string;
-  topic0: string;
-  topic1: string | null;
-  topic2: string | null;
-  topic3: string | null;
+  address_hex: string;
+  data_hex: string;
+  topic0_hex: string;
+  topic1_hex: string | null;
+  topic2_hex: string | null;
+  topic3_hex: string | null;
+}
+
+function encodeCursor(blockNumber: number, logIndex: number): string {
+  return Buffer.from(`${blockNumber}:${logIndex}`).toString("base64url");
+}
+
+function decodeCursor(cursor: string): {
+  blockNumber: number;
+  logIndex: number;
+} {
+  const [blockNumber, logIndex] = Buffer.from(cursor, "base64url")
+    .toString()
+    .split(":")
+    .map(Number);
+  return { blockNumber: blockNumber ?? 0, logIndex: logIndex ?? 0 };
 }
 
 function rowToLog(row: LogRow): typeof Log.static {
-  const topics = [row.topic0, row.topic1, row.topic2, row.topic3].filter(
-    (t): t is string => t !== null && t !== "",
-  );
+  const topics = [
+    row.topic0_hex,
+    row.topic1_hex,
+    row.topic2_hex,
+    row.topic3_hex,
+  ].filter((t): t is string => t !== null && t !== "");
   return {
-    address: row.address,
-    blockHash: row.block_hash,
+    address: row.address_hex,
+    blockHash: row.block_hash_hex,
     blockNumber: Number(row.block_number),
     timestamp: Number(row.timestamp),
-    data: row.data,
+    data: row.data_hex,
     logIndex: Number(row.log_index),
     topics,
-    transactionHash: row.transaction_hash,
+    transactionHash: row.transaction_hash_hex,
     transactionIndex: Number(row.transaction_index),
   };
 }
@@ -186,47 +208,79 @@ new Elysia()
   )
   .get(
     "/:chainId/logs",
-    async ({ params, query, status }) => {
-      let from = query.from;
-      let to = query.to;
+    async ({ params, query }) => {
+      const limit = Math.min(query.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
 
-      if (to < from) [from, to] = [to, from];
-      if (to - from > MAX_BLOCK_RANGE) {
-        return status(400, `Block range must be at most ${MAX_BLOCK_RANGE}`);
-      }
+      const cursor = query.cursor ? decodeCursor(query.cursor) : null;
 
-      // Build query. topic is required so we always hit the primary index
-      // (chain_id, topic0, …). address is optional and further narrows the scan.
-      const addressClause = query.emitter
-        ? "AND address = {emitter: String}"
+      // Strip 0x prefix for unhex(); toLowerCase normalises checksummed addresses.
+      const topicHex = query.topic.slice(2);
+      const emitterHex = query.emitter?.toLowerCase().slice(2);
+
+      // Cursor clause omitted on the first page to avoid UInt32/Int64 coercion
+      // issues with sentinel values in ClickHouse tuple comparisons.
+      const cursorClause = cursor
+        ? "AND (block_number, log_index) > ({cursorBlock: UInt64}, {cursorLogIndex: UInt32})"
+        : "";
+      const addressClause = emitterHex
+        ? "AND address = unhex({emitterHex: String})"
         : "";
 
+      // ClickHouse resolves SELECT aliases in WHERE, so aliases must not
+      // shadow column names used in the WHERE clause (topic0, address).
+      // We use distinct alias names (_hex suffix) to avoid the conflict.
       const result = await clickhouse.query({
         query: `
           SELECT
-            block_number, block_hash, timestamp, transaction_hash, transaction_index,
-            log_index, address, data, topic0, topic1, topic2, topic3
+            block_number,
+            concat('0x', lower(hex(block_hash)))        AS block_hash_hex,
+            timestamp,
+            concat('0x', lower(hex(transaction_hash))) AS transaction_hash_hex,
+            transaction_index,
+            log_index,
+            concat('0x', lower(hex(address)))           AS address_hex,
+            concat('0x', lower(hex(data)))              AS data_hex,
+            concat('0x', lower(hex(topic0)))            AS topic0_hex,
+            if(topic1 IS NULL, NULL, concat('0x', lower(hex(topic1)))) AS topic1_hex,
+            if(topic2 IS NULL, NULL, concat('0x', lower(hex(topic2)))) AS topic2_hex,
+            if(topic3 IS NULL, NULL, concat('0x', lower(hex(topic3)))) AS topic3_hex
           FROM ethereum.logs
           WHERE
-            chain_id     = {chainId: UInt32}
-            AND topic0   = {topic: String}
-            AND block_number >= {from: UInt32}
-            AND block_number <= {to: UInt32}
+            chain_id = {chainId: UInt32}
+            AND topic0 = unhex({topicHex: String})
+            ${cursorClause}
             ${addressClause}
           ORDER BY block_number, log_index
+          LIMIT {limit: UInt32}
         `,
         query_params: {
           chainId: params.chainId,
-          topic: query.topic,
-          from,
-          to,
-          ...(query.emitter ? { emitter: query.emitter } : {}),
+          topicHex,
+          limit,
+          ...(cursor
+            ? {
+                cursorBlock: cursor.blockNumber,
+                cursorLogIndex: cursor.logIndex,
+              }
+            : {}),
+          ...(emitterHex ? { emitterHex } : {}),
         },
         format: "JSONEachRow",
       });
 
       const rows = await result.json<LogRow>();
-      return rows.map(rowToLog);
+      const logs = rows.map(rowToLog);
+
+      const lastRow = rows.at(-1);
+      const nextCursor =
+        rows.length === limit && lastRow
+          ? encodeCursor(
+              Number(lastRow.block_number),
+              Number(lastRow.log_index),
+            )
+          : null;
+
+      return { logs, nextCursor };
     },
     {
       beforeHandle: ({ query, status }) => {
@@ -235,25 +289,38 @@ new Elysia()
       params: t.Object({ chainId: t.String() }),
       query: t.Object({
         token: t.String({ description: "API token" }),
-        from: t.Numeric({ description: "Start block number (inclusive)" }),
-        to: t.Numeric({
-          description:
-            "End block number (inclusive); swapped with `from` if smaller",
-        }),
         topic: t.String({
           description:
-            "Event signature hash (topic0) to filter by — required, maps directly to the primary index",
+            "Event signature hash (topic0) — required, maps directly to the primary index",
         }),
         emitter: t.Optional(
           t.String({
             description:
-              "Contract address that emitted the log; combined with topic for a full primary-key lookup",
+              "Contract address; combined with topic for a full primary-key lookup",
+          }),
+        ),
+        cursor: t.Optional(
+          t.String({
+            description:
+              "Opaque pagination cursor from the previous response's nextCursor",
+          }),
+        ),
+        limit: t.Optional(
+          t.Numeric({
+            description: `Number of logs to return (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT})`,
           }),
         ),
       }),
       response: {
-        200: t.Array(Log),
-        400: t.String(),
+        200: t.Object({
+          logs: t.Array(Log),
+          nextCursor: t.Nullable(
+            t.String({
+              description:
+                "Pass as cursor in the next request to fetch the following page; null when no more results",
+            }),
+          ),
+        }),
         401: t.String(),
       },
     },

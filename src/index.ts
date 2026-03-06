@@ -23,15 +23,15 @@ const POLL_INTERVAL_SECS = 10;
 interface LogRow {
   chain_id: number;
   block_number: number;
-  block_hash: Buffer;        // FixedString(32) — raw 32 bytes
+  block_hash: Buffer; // FixedString(32) — raw 32 bytes
   timestamp: number;
-  transaction_hash: Buffer;  // FixedString(32) — raw 32 bytes
+  transaction_hash: Buffer; // FixedString(32) — raw 32 bytes
   transaction_index: number;
   log_index: number;
-  address: Buffer;           // FixedString(20) — raw 20 bytes
-  data: Buffer;              // String — raw ABI bytes
-  topic0: Buffer;            // FixedString(32) — raw 32 bytes
-  topic1: Buffer | null;     // Nullable(FixedString(32))
+  address: Buffer; // FixedString(20) — raw 20 bytes
+  data: Buffer; // String — raw ABI bytes
+  topic0: Buffer; // FixedString(32) — raw 32 bytes
+  topic1: Buffer | null; // Nullable(FixedString(32))
   topic2: Buffer | null;
   topic3: Buffer | null;
   removed: number;
@@ -82,7 +82,10 @@ function varUIntSize(n: number): number {
   if (n === 0) return 1;
   let size = 0;
   let v = n;
-  while (v > 0) { v >>>= 7; size++; }
+  while (v > 0) {
+    v >>>= 7;
+    size++;
+  }
   return size;
 }
 
@@ -103,46 +106,58 @@ function serializeBatch(rows: LogRow[]): Buffer {
   // First pass: compute total byte count.
   let size = 0;
   for (const row of rows) {
-    size += 4;  // chain_id UInt32
-    size += 8;  // block_number UInt64
+    size += 4; // chain_id UInt32
+    size += 8; // block_number UInt64
     size += 32; // block_hash FixedString(32)
-    size += 4;  // timestamp UInt32
+    size += 4; // timestamp UInt32
     size += 32; // transaction_hash FixedString(32)
-    size += 4;  // transaction_index UInt32
-    size += 4;  // log_index UInt32
+    size += 4; // transaction_index UInt32
+    size += 4; // log_index UInt32
     size += 20; // address FixedString(20)
     size += varUIntSize(row.data.length) + row.data.length; // data String
     size += 32; // topic0 FixedString(32)
     size += 1 + (row.topic1 !== null ? 32 : 0); // topic1 Nullable(FixedString(32))
     size += 1 + (row.topic2 !== null ? 32 : 0); // topic2
     size += 1 + (row.topic3 !== null ? 32 : 0); // topic3
-    size += 1;  // removed UInt8
+    size += 1; // removed UInt8
   }
 
   const buf = Buffer.allocUnsafe(size);
   let off = 0;
 
   for (const row of rows) {
-    buf.writeUInt32LE(row.chain_id, off); off += 4;
+    buf.writeUInt32LE(row.chain_id, off);
+    off += 4;
     // Write UInt64 as two LE UInt32s. Block numbers fit in UInt32 for the
     // foreseeable future (Ethereum is at ~22M; max UInt32 is ~4.3B).
-    buf.writeUInt32LE(row.block_number, off); off += 4;
-    buf.writeUInt32LE(0, off); off += 4;
-    row.block_hash.copy(buf, off); off += 32;
-    buf.writeUInt32LE(row.timestamp, off); off += 4;
-    row.transaction_hash.copy(buf, off); off += 32;
-    buf.writeUInt32LE(row.transaction_index, off); off += 4;
-    buf.writeUInt32LE(row.log_index, off); off += 4;
-    row.address.copy(buf, off); off += 20;
+    buf.writeUInt32LE(row.block_number, off);
+    off += 4;
+    buf.writeUInt32LE(0, off);
+    off += 4;
+    row.block_hash.copy(buf, off);
+    off += 32;
+    buf.writeUInt32LE(row.timestamp, off);
+    off += 4;
+    row.transaction_hash.copy(buf, off);
+    off += 32;
+    buf.writeUInt32LE(row.transaction_index, off);
+    off += 4;
+    buf.writeUInt32LE(row.log_index, off);
+    off += 4;
+    row.address.copy(buf, off);
+    off += 20;
     off = writeVarUInt(buf, row.data.length, off);
-    row.data.copy(buf, off); off += row.data.length;
-    row.topic0.copy(buf, off); off += 32;
+    row.data.copy(buf, off);
+    off += row.data.length;
+    row.topic0.copy(buf, off);
+    off += 32;
     for (const topic of [row.topic1, row.topic2, row.topic3] as const) {
       if (topic === null) {
         buf[off++] = 1; // null flag
       } else {
         buf[off++] = 0; // non-null flag
-        topic.copy(buf, off); off += 32;
+        topic.copy(buf, off);
+        off += 32;
       }
     }
     buf[off++] = row.removed;
@@ -175,7 +190,9 @@ async function flushBatch(batch: LogRow[]): Promise<void> {
   const url = `${CLICKHOUSE_URL}/?query=${encodeURIComponent(`INSERT INTO ${CLICKHOUSE_DB}.logs FORMAT RowBinary`)}`;
   const res = await fetch(url, { method: "POST", body: new Uint8Array(data) });
   if (!res.ok) {
-    throw new Error(`ClickHouse insert failed [${res.status}]: ${await res.text()}`);
+    throw new Error(
+      `ClickHouse insert failed [${res.status}]: ${await res.text()}`,
+    );
   }
 }
 
