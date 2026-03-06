@@ -184,6 +184,10 @@ async function main(): Promise<void> {
     username: "default",
     password: "",
     database: CLICKHOUSE_DB,
+    clickhouse_settings: {
+      async_insert: 1,
+      wait_for_async_insert: 0,
+    },
   });
 
   const hypersync = new HypersyncClient({
