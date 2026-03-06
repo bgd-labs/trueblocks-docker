@@ -184,11 +184,6 @@ async function main(): Promise<void> {
     username: "default",
     password: "",
     database: CLICKHOUSE_DB,
-    clickhouse_settings: {
-      // Async inserts batch writes on the server side, reducing insert overhead.
-      async_insert: 1,
-      wait_for_async_insert: 1,
-    },
   });
 
   const hypersync = new HypersyncClient({
