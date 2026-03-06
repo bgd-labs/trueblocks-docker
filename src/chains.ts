@@ -12,12 +12,10 @@ export interface ChainConfig {
    * - Avalanche (Snowman probabilistic): 10 blocks (~17 s)
    * - Celo (PBFT, single-block finality): 3 blocks
    * - Sonic (DAG-BFT, sub-second finality): 10 blocks
-   * - ZK rollups (Linea, Scroll, ZKsync Era): 10 blocks — proven batches
-   *   are final on L1, but we wait a short buffer for batch submission lag
+   * - ZK rollups (Linea, Scroll): 10 blocks — proven batches are final on
+   *   L1, but we wait a short buffer for batch submission lag
    * - OP Stack / Optimistic rollups (Base, OP Mainnet, Arbitrum, Mantle,
-   *   Metis, Soneium, Ink, Plasma, MegaETH): 50 blocks — sequencer reorgs
-   *   are extremely rare in practice; the 7-day challenge window is an L1→L2
-   *   withdrawal concern, not a log-data reorg concern
+   *   Ink, Plasma, MegaETH): 50 blocks — sequencer reorgs are extremely
    */
   readonly reorgSafetyBlocks: number;
 }
@@ -58,24 +56,6 @@ export const CHAINS = [
     name: "Sonic",
     hypersyncUrl: "https://sonic.hypersync.xyz",
     reorgSafetyBlocks: 10,
-  },
-  {
-    id: 324,
-    name: "ZKsync Era",
-    hypersyncUrl: "https://zksync.hypersync.xyz",
-    reorgSafetyBlocks: 10,
-  },
-  {
-    id: 1088,
-    name: "Metis",
-    hypersyncUrl: "https://metis.hypersync.xyz",
-    reorgSafetyBlocks: 50,
-  },
-  {
-    id: 1868,
-    name: "Soneium Mainnet",
-    hypersyncUrl: "https://soneium.hypersync.xyz",
-    reorgSafetyBlocks: 50,
   },
   {
     id: 4326,
