@@ -7,11 +7,11 @@ async function fetchHeight(chainId: string): Promise<number> {
   return json.height;
 }
 
-export function estimatedHead(chainId: string, blockTimeMs: number): number {
+export function estimatedHead(chainId: string, blockTime: number): number {
   const head = chainHeads.get(chainId);
   if (!head) return 0;
-  const elapsed = Date.now() - head.fetchedAt;
-  return head.height + Math.floor(elapsed / blockTimeMs);
+  const elapsedSecs = (Date.now() - head.fetchedAt) / 1000;
+  return head.height + Math.floor(elapsedSecs / blockTime);
 }
 
 export async function refreshHeads(

@@ -20,19 +20,19 @@ const config = Bun.TOML.parse(toml) as {
       chain: string;
       chainId: string;
       safetyDistance: number;
-      blockTimeMs: number;
+      blockTime: number;
     }
   >;
 };
 
 const CHAIN_CONFIG: Record<
   string,
-  { name: string; safetyDistance: bigint; blockTimeMs: number }
+  { name: string; safetyDistance: bigint; blockTime: number }
 > = Object.fromEntries(
   Object.values(config.chains).map(
-    ({ chainId, chain, safetyDistance, blockTimeMs }) => [
+    ({ chainId, chain, safetyDistance, blockTime }) => [
       chainId,
-      { name: chain, safetyDistance: BigInt(safetyDistance), blockTimeMs },
+      { name: chain, safetyDistance: BigInt(safetyDistance), blockTime },
     ],
   ),
 );
@@ -100,13 +100,12 @@ new Elysia()
     "/chains",
     () =>
       Object.entries(CHAIN_CONFIG).map(
-        ([chainId, { name, safetyDistance, blockTimeMs }]) => ({
+        ([chainId, { name, safetyDistance, blockTime }]) => ({
           chainId,
           name,
           safetyDistance: Number(safetyDistance),
-          blockTimeMs,
-          safeHead:
-            estimatedHead(chainId, blockTimeMs) - Number(safetyDistance),
+          blockTime,
+          safeHead: estimatedHead(chainId, blockTime) - Number(safetyDistance),
         }),
       ),
     {
@@ -119,8 +118,8 @@ new Elysia()
               description:
                 "Number of blocks behind the head considered safe from reorgs",
             }),
-            blockTimeMs: t.Number({
-              description: "Approximate block time in milliseconds",
+            blockTime: t.Number({
+              description: "Approximate block time in seconds",
             }),
             safeHead: t.Number({
               description:
@@ -238,7 +237,7 @@ new Elysia()
       }
 
       const safeBlock =
-        BigInt(estimatedHead(params.chainId, cfg.blockTimeMs)) -
+        BigInt(estimatedHead(params.chainId, cfg.blockTime)) -
         cfg.safetyDistance;
       const emitters = Array.isArray(query.emitter)
         ? query.emitter
