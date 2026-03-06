@@ -301,7 +301,12 @@ async function runStream({
   filter,
 }: RunStreamConfig): Promise<{ nextBlock: number; totalLogs: number }> {
   const logsFilter =
-    filter?.type === "include" ? [{ address: filter.addresses }] : [{}]; // "all" and "exclude" both stream everything; exclude is handled post-insert by ClickHouse dedup
+    filter?.type === "include" ? [{ address: filter.addresses }] : [{}];
+
+  const excludeSet =
+    filter?.type === "exclude"
+      ? new Set(filter.addresses.map((a) => a.toLowerCase()))
+      : null;
 
   const query = {
     fromBlock,
@@ -346,9 +351,12 @@ async function runStream({
       lastBlock = res.nextBlock;
 
       const timestamps = buildTimestampMap(res.data.blocks);
-      const batch = res.data.logs.map((log) =>
-        logToRow(log, chainId, timestamps),
-      );
+      const logs = excludeSet
+        ? res.data.logs.filter(
+            (l) => !excludeSet.has(l.address?.toLowerCase() ?? ""),
+          )
+        : res.data.logs;
+      const batch = logs.map((log) => logToRow(log, chainId, timestamps));
 
       totalLogs += batch.length;
       await flusher.enqueue(batch);
@@ -525,6 +533,7 @@ try {
             toBlock: safeBlock,
             log,
             flusher,
+            filter: { type: "exclude", addresses: safeAddresses },
           });
           mainStartBlock = res.nextBlock;
           log.info(
