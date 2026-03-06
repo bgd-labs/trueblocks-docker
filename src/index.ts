@@ -300,18 +300,17 @@ async function runStream({
   flusher,
   filter,
 }: RunStreamConfig): Promise<{ nextBlock: number; totalLogs: number }> {
-  const logsFilter =
-    filter?.type === "include" ? [{ address: filter.addresses }] : [{}];
-
-  const excludeSet =
-    filter?.type === "exclude"
-      ? new Set(filter.addresses.map((a) => a.toLowerCase()))
-      : null;
+  const logsSelection: { include: object; exclude?: object } =
+    filter?.type === "include"
+      ? { include: { address: filter.addresses } }
+      : filter?.type === "exclude"
+        ? { include: {}, exclude: { address: filter.addresses } }
+        : { include: {} };
 
   const query = {
     fromBlock,
     toBlock,
-    logs: logsFilter,
+    logs: [logsSelection],
     fieldSelection: {
       log: [
         "Removed" as const,
@@ -351,12 +350,9 @@ async function runStream({
       lastBlock = res.nextBlock;
 
       const timestamps = buildTimestampMap(res.data.blocks);
-      const logs = excludeSet
-        ? res.data.logs.filter(
-            (l) => !excludeSet.has(l.address?.toLowerCase() ?? ""),
-          )
-        : res.data.logs;
-      const batch = logs.map((log) => logToRow(log, chainId, timestamps));
+      const batch = res.data.logs.map((log) =>
+        logToRow(log, chainId, timestamps),
+      );
 
       totalLogs += batch.length;
       await flusher.enqueue(batch);
