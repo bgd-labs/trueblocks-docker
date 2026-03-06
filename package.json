@@ -1,0 +1,20 @@
+{
+  "name": "eth-logs-downloader",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "typecheck": "tsgo --noEmit",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.10.1",
+    "@envio-dev/hypersync-client": "^1.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260306.1",
+    "lefthook": "^2.1.2"
+  }
+}

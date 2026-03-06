@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    biome:
+      glob: "src/**/*.ts"
+      run: bunx biome check --write {staged_files}
+      stage_fixed: true
+    typecheck:
+      run: bunx tsgo --noEmit
