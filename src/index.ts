@@ -415,9 +415,6 @@ try {
   const syncJob = new Cron(
     `*/${POLL_INTERVAL_SECS} * * * * *`,
     async () => {
-      // Prevent overlapping syncs
-      if (syncJob.isBusy()) return;
-
       try {
         const tip = await hypersync.getHeight();
         const safeBlock = Math.max(
