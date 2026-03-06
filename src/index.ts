@@ -6,6 +6,7 @@ import {
   type Log,
   type QueryResponse,
 } from "@envio-dev/hypersync-client";
+import pino from "pino";
 import { CHAIN_BY_ID } from "./chains";
 
 const HYPERSYNC_API_KEY = "b5c5baee-7507-451c-bcfb-f0d1e790a5ab";
@@ -181,7 +182,7 @@ async function getStartBlock(
   return maxBlock;
 }
 
-async function flushBatch(batch: LogRow[]): Promise<void> {
+async function flushBatch(batch: LogRow[], log: pino.Logger): Promise<void> {
   if (batch.length === 0) return;
   const data = serializeBatch(batch);
   // @clickhouse/client doesn't expose RowBinary as an insert format, so we
@@ -190,9 +191,9 @@ async function flushBatch(batch: LogRow[]): Promise<void> {
   const url = `${CLICKHOUSE_URL}/?query=${encodeURIComponent(`INSERT INTO ${CLICKHOUSE_DB}.logs FORMAT RowBinary`)}`;
   const res = await fetch(url, { method: "POST", body: new Uint8Array(data) });
   if (!res.ok) {
-    throw new Error(
-      `ClickHouse insert failed [${res.status}]: ${await res.text()}`,
-    );
+    const body = await res.text();
+    log.error({ status: res.status, body }, "ClickHouse insert failed");
+    throw new Error(`ClickHouse insert failed [${res.status}]: ${body}`);
   }
 }
 
@@ -201,6 +202,7 @@ async function runStream(
   chainId: number,
   fromBlock: number,
   toBlock: number,
+  log: pino.Logger,
 ): Promise<number> {
   const query = {
     fromBlock,
@@ -250,12 +252,10 @@ async function runStream(
     if (rows.length === 0) return;
     pendingFlushCount++;
     flushChain = flushChain.then(async () => {
-      await flushBatch(rows);
+      await flushBatch(rows, log);
       totalLogs += rows.length;
       pendingFlushCount--;
-      console.log(
-        `[${new Date().toISOString()}] Inserted ${totalLogs.toLocaleString()} logs total, next block: ${nextBlock.toLocaleString()}`,
-      );
+      log.info({ totalLogs, nextBlock }, "flushed batch");
     });
   };
 
@@ -298,9 +298,7 @@ async function runStream(
   // Drain any remaining in-flight flushes.
   await flushChain;
 
-  console.log(
-    `[${new Date().toISOString()}] Stream finished. Inserted ${totalLogs.toLocaleString()} logs this run, next block: ${lastBlock.toLocaleString()}`,
-  );
+  log.info({ totalLogs, nextBlock: lastBlock }, "stream finished");
 
   return lastBlock;
 }
@@ -308,6 +306,8 @@ async function runStream(
 async function main(): Promise<void> {
   const chain = CHAIN_BY_ID.get(CHAIN_ID);
   if (!chain) throw new Error(`Chain ${CHAIN_ID} not found in chains config`);
+
+  const log = pino({ level: "info" }).child({ chainId: CHAIN_ID });
 
   const clickhouse = createClient({
     url: CLICKHOUSE_URL,
@@ -325,10 +325,8 @@ async function main(): Promise<void> {
     apiToken: HYPERSYNC_API_KEY,
   });
 
-  console.log("Connected. Checking last indexed block…");
-
   let startBlock = await getStartBlock(clickhouse, CHAIN_ID);
-  console.log(`Resuming from block ${startBlock.toLocaleString()}`);
+  log.info({ startBlock }, "connected, resuming ingestion");
 
   // Continuous loop: stream up to the reorg-safe tip, then poll for new blocks.
   while (true) {
@@ -336,25 +334,36 @@ async function main(): Promise<void> {
     const safeBlock = Math.max(startBlock, tip - chain.reorgSafetyBlocks);
 
     if (safeBlock <= startBlock) {
-      console.log(
-        `At reorg-safe tip (tip=${tip.toLocaleString()}, safety=${chain.reorgSafetyBlocks} blocks). Polling again in ${POLL_INTERVAL_SECS}s…`,
+      log.info(
+        { tip, safeBlock, reorgSafetyBlocks: chain.reorgSafetyBlocks },
+        "at reorg-safe tip, polling",
       );
       await Bun.sleep(POLL_INTERVAL_SECS * 1000);
       continue;
     }
 
-    console.log(
-      `Streaming blocks ${startBlock.toLocaleString()}–${safeBlock.toLocaleString()} (tip=${tip.toLocaleString()}, safety=${chain.reorgSafetyBlocks})`,
+    log.info(
+      {
+        fromBlock: startBlock,
+        toBlock: safeBlock,
+        tip,
+        reorgSafetyBlocks: chain.reorgSafetyBlocks,
+      },
+      "streaming",
     );
-    startBlock = await runStream(hypersync, CHAIN_ID, startBlock, safeBlock);
-    console.log(
-      `Caught up to safe tip. Polling again in ${POLL_INTERVAL_SECS}s…`,
+    startBlock = await runStream(
+      hypersync,
+      CHAIN_ID,
+      startBlock,
+      safeBlock,
+      log,
     );
+    log.info("caught up to safe tip, polling");
     await Bun.sleep(POLL_INTERVAL_SECS * 1000);
   }
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  pino().error(err, "fatal error");
   process.exit(1);
 });

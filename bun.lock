@@ -11,6 +11,7 @@
         "elysia": "^1.4.27",
         "elysia-logger": "^0.5.2",
         "elysia-rate-limit": "^4.5.0",
+        "pino": "^10.3.1",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.6",
