@@ -14,8 +14,8 @@ import env from "./env";
 import { getSafeAddresses } from "./safe-addresses";
 import { ensureSchema } from "./schema";
 
-const FLUSH_BATCH_SIZE = 75_000;
-const FLUSH_INTERVAL_MS = 5_000;
+const FLUSH_BATCH_SIZE = 250_000;
+const FLUSH_INTERVAL_MS = 10_000;
 
 // Seconds to wait before re-checking the chain tip after catching up.
 const POLL_INTERVAL_SECS = 10;
