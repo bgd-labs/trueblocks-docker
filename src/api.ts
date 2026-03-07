@@ -8,6 +8,30 @@ import { tokenSet } from "./auth";
 import { CHAIN_BY_ID, getHypersyncForChain, getViemForChain } from "./chains";
 import env from "./env";
 
+// Minimal LRU cache backed by Map (insertion order = LRU order in JS Maps).
+class LRU<V> {
+  private m = new Map<string, V>();
+  constructor(private max: number) {}
+  get(k: string): V | undefined {
+    const v = this.m.get(k);
+    if (v === undefined) return undefined;
+    this.m.delete(k);
+    this.m.set(k, v);
+    return v;
+  }
+  set(k: string, v: V) {
+    if (this.m.has(k)) this.m.delete(k);
+    else if (this.m.size >= this.max)
+      this.m.delete(this.m.keys().next().value!);
+    this.m.set(k, v);
+  }
+}
+
+// Block hashes and tx hashes are immutable once finalized — safe to cache
+// indefinitely. 50k blocks ≈ 3.7 MB; 200k tx ids ≈ 14.8 MB.
+const blockHashCache = new LRU<string>(50_000);
+const txHashCache = new LRU<string>(200_000);
+
 const DEFAULT_LIMIT = 1_000;
 const MAX_LIMIT = 50_000;
 
@@ -149,15 +173,28 @@ async function fetchBlockHashes(
   blockNumbers: string[],
 ): Promise<Map<string, string>> {
   if (blockNumbers.length === 0) return new Map();
-  const result = await clickhouse.query({
-    query: `SELECT toString(number) AS num, concat('0x', lower(hex(hash))) AS hash_hex
-            FROM ethereum.blocks
-            WHERE chain_id = {chainId: UInt32} AND number IN ({nums: Array(UInt64)})`,
-    query_params: { chainId, nums: blockNumbers },
-    format: "JSONEachRow",
-  });
-  const rows = await result.json<{ num: string; hash_hex: string }>();
-  return new Map(rows.map((r) => [r.num, r.hash_hex]));
+  const out = new Map<string, string>();
+  const missing: string[] = [];
+  for (const num of blockNumbers) {
+    const cached = blockHashCache.get(`${chainId}:${num}`);
+    if (cached !== undefined) out.set(num, cached);
+    else missing.push(num);
+  }
+  if (missing.length > 0) {
+    const result = await clickhouse.query({
+      query: `SELECT toString(number) AS num, concat('0x', lower(hex(hash))) AS hash_hex
+              FROM ethereum.blocks
+              WHERE chain_id = {chainId: UInt32} AND number IN ({nums: Array(UInt64)})`,
+      query_params: { chainId, nums: missing },
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<{ num: string; hash_hex: string }>();
+    for (const r of rows) {
+      blockHashCache.set(`${chainId}:${r.num}`, r.hash_hex);
+      out.set(r.num, r.hash_hex);
+    }
+  }
+  return out;
 }
 
 // Fetch transaction_hash for a set of transaction_ids in one primary-key lookup.
@@ -166,15 +203,28 @@ async function fetchTxHashes(
   txIds: string[],
 ): Promise<Map<string, string>> {
   if (txIds.length === 0) return new Map();
-  const result = await clickhouse.query({
-    query: `SELECT toString(transaction_id) AS tid, concat('0x', lower(hex(transaction_hash))) AS hash_hex
-            FROM ethereum.transaction_hashes
-            WHERE chain_id = {chainId: UInt32} AND transaction_id IN ({tids: Array(UInt64)})`,
-    query_params: { chainId, tids: txIds },
-    format: "JSONEachRow",
-  });
-  const rows = await result.json<{ tid: string; hash_hex: string }>();
-  return new Map(rows.map((r) => [r.tid, r.hash_hex]));
+  const out = new Map<string, string>();
+  const missing: string[] = [];
+  for (const tid of txIds) {
+    const cached = txHashCache.get(`${chainId}:${tid}`);
+    if (cached !== undefined) out.set(tid, cached);
+    else missing.push(tid);
+  }
+  if (missing.length > 0) {
+    const result = await clickhouse.query({
+      query: `SELECT toString(transaction_id) AS tid, concat('0x', lower(hex(transaction_hash))) AS hash_hex
+              FROM ethereum.transaction_hashes
+              WHERE chain_id = {chainId: UInt32} AND transaction_id IN ({tids: Array(UInt64)})`,
+      query_params: { chainId, tids: missing },
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<{ tid: string; hash_hex: string }>();
+    for (const r of rows) {
+      txHashCache.set(`${chainId}:${r.tid}`, r.hash_hex);
+      out.set(r.tid, r.hash_hex);
+    }
+  }
+  return out;
 }
 
 // Enrich raw log rows with block_hash and transaction_hash via parallel lookups.
@@ -534,9 +584,17 @@ new Elysia()
                 const topicHex = query.topic.slice(2);
                 const emitterHex = query.emitter?.toLowerCase().slice(2);
 
-                const cursorClause = cursor
+                // Lower bound: cursor position takes priority over fromBlock when
+                // paginating; fromBlock applies only on the first page.
+                const lowerClause = cursor
                   ? "AND (block_number, log_index) > ({cursorBlock: UInt64}, {cursorLogIndex: UInt32})"
-                  : "";
+                  : query.fromBlock !== undefined
+                    ? "AND block_number >= {fromBlock: UInt64}"
+                    : "";
+                const upperClause =
+                  query.toBlock !== undefined
+                    ? "AND block_number <= {toBlock: UInt64}"
+                    : "";
                 const addressClause = emitterHex
                   ? "AND address = unhex({emitterHex: String})"
                   : "";
@@ -548,7 +606,8 @@ new Elysia()
                     WHERE
                       chain_id = {chainId: UInt32}
                       AND topic0 = unhex({topicHex: String})
-                      ${cursorClause}
+                      ${lowerClause}
+                      ${upperClause}
                       ${addressClause}
                     ORDER BY block_number, log_index
                     LIMIT {limit: UInt32}
@@ -562,6 +621,12 @@ new Elysia()
                           cursorBlock: cursor.blockNumber,
                           cursorLogIndex: cursor.logIndex,
                         }
+                      : {}),
+                    ...(query.fromBlock !== undefined && !cursor
+                      ? { fromBlock: query.fromBlock }
+                      : {}),
+                    ...(query.toBlock !== undefined
+                      ? { toBlock: query.toBlock }
                       : {}),
                     ...(emitterHex ? { emitterHex } : {}),
                   },
@@ -597,6 +662,19 @@ new Elysia()
                       description:
                         "Contract address; combined with topic for a full primary-key lookup",
                       examples: ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"],
+                    }),
+                  ),
+                  fromBlock: t.Optional(
+                    t.Numeric({
+                      description:
+                        "First block to include (inclusive). Ignored when cursor is provided.",
+                      examples: [18_000_000],
+                    }),
+                  ),
+                  toBlock: t.Optional(
+                    t.Numeric({
+                      description: "Last block to include (inclusive).",
+                      examples: [18_001_000],
                     }),
                   ),
                   cursor: t.Optional(

@@ -39,6 +39,10 @@ const migrations: Migration[] = [
     name: "0006_logs_topic0_chrono_projection",
     up: (await import("./migrations/0006_logs_topic0_chrono_projection")).up,
   },
+  {
+    name: "0007_reorder_sort_key",
+    up: (await import("./migrations/0007_reorder_sort_key")).up,
+  },
 ];
 
 // ── Runner ───────────────────────────────────────────────────────────────────
