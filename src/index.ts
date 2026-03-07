@@ -9,7 +9,7 @@ import {
 } from "@envio-dev/hypersync-client";
 import { Cron } from "croner";
 import pino from "pino";
-import { createPublicClient, extractChain, http } from "viem";
+import { createPublicClient, http } from "viem";
 import * as viemChains from "viem/chains";
 import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
