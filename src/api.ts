@@ -353,18 +353,24 @@ new Elysia()
             const safeAddresses = await getSafeAddresses(
               Number(params.chainId),
             );
-            let countQuery =
-              "SELECT count() AS total_logs, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
+
+            let logCountQuery =
+              "SELECT count() AS total, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
             if (safeAddresses.length > 0) {
               const formattedAddresses = safeAddresses
                 .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
                 .join(", ");
-              countQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
+              logCountQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
             }
 
-            const [countResult, partsResult] = await Promise.all([
+            const [
+              logCountResult,
+              logPartsResult,
+              blockCountResult,
+              blockPartsResult,
+            ] = await Promise.all([
               clickhouse.query({
-                query: countQuery,
+                query: logCountQuery,
                 query_params: { chainId: params.chainId },
                 format: "JSONEachRow",
               }),
@@ -373,39 +379,82 @@ new Elysia()
                   "SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed, round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio FROM system.parts WHERE table = 'logs' AND active",
                 format: "JSONEachRow",
               }),
+              clickhouse.query({
+                query:
+                  "SELECT count() AS total, max(number) AS max_block FROM ethereum.blocks WHERE chain_id = {chainId: UInt32}",
+                query_params: { chainId: params.chainId },
+                format: "JSONEachRow",
+              }),
+              clickhouse.query({
+                query:
+                  "SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed, round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio FROM system.parts WHERE table = 'blocks' AND active",
+                format: "JSONEachRow",
+              }),
             ]);
 
-            const [counts] = await countResult.json<{
-              total_logs: string;
+            const [logCounts] = await logCountResult.json<{
+              total: string;
               max_block: string;
             }>();
-            const [parts] = await partsResult.json<{
+            const [logParts] = await logPartsResult.json<{
+              compressed: string;
+              ratio: number;
+            }>();
+            const [blockCounts] = await blockCountResult.json<{
+              total: string;
+              max_block: string;
+            }>();
+            const [blockParts] = await blockPartsResult.json<{
               compressed: string;
               ratio: number;
             }>();
 
             return {
-              totalLogs: Number(counts?.total_logs ?? 0),
-              maxIndexedBlock: Number(counts?.max_block ?? 0),
-              compressedSize: parts?.compressed ?? "0 B",
-              compressionRatio: parts?.ratio ?? 0,
+              logs: {
+                total: Number(logCounts?.total ?? 0),
+                maxIndexedBlock: Number(logCounts?.max_block ?? 0),
+                compressedSize: logParts?.compressed ?? "0 B",
+                compressionRatio: logParts?.ratio ?? 0,
+              },
+              blocks: {
+                total: Number(blockCounts?.total ?? 0),
+                maxIndexedBlock: Number(blockCounts?.max_block ?? 0),
+                compressedSize: blockParts?.compressed ?? "0 B",
+                compressionRatio: blockParts?.ratio ?? 0,
+              },
             };
           },
           {
             params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
             response: {
               200: t.Object({
-                totalLogs: t.Number({
-                  description: "Total number of indexed logs",
+                logs: t.Object({
+                  total: t.Number({
+                    description: "Total number of indexed logs",
+                  }),
+                  maxIndexedBlock: t.Number({
+                    description: "Highest block number with logs indexed",
+                  }),
+                  compressedSize: t.String({
+                    description: "Compressed size of the logs table on disk",
+                  }),
+                  compressionRatio: t.Number({
+                    description: "Uncompressed / compressed ratio",
+                  }),
                 }),
-                maxIndexedBlock: t.Number({
-                  description: "Highest block number indexed",
-                }),
-                compressedSize: t.String({
-                  description: "Compressed size of the logs table on disk",
-                }),
-                compressionRatio: t.Number({
-                  description: "Uncompressed / compressed ratio",
+                blocks: t.Object({
+                  total: t.Number({
+                    description: "Total number of indexed blocks",
+                  }),
+                  maxIndexedBlock: t.Number({
+                    description: "Highest block number indexed",
+                  }),
+                  compressedSize: t.String({
+                    description: "Compressed size of the blocks table on disk",
+                  }),
+                  compressionRatio: t.Number({
+                    description: "Uncompressed / compressed ratio",
+                  }),
                 }),
               }),
             },
