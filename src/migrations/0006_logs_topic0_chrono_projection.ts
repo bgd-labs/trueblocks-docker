@@ -5,12 +5,18 @@ export async function up(client: ClickHouseClient): Promise<void> {
   await client.command({
     query: `
       ALTER TABLE ${env.CLICKHOUSE_DB}.logs
+      MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild'
+    `,
+  });
+
+  await client.command({
+    query: `
+      ALTER TABLE ${env.CLICKHOUSE_DB}.logs
       ADD PROJECTION IF NOT EXISTS proj_topic0_chrono
       (
         SELECT *
         ORDER BY (chain_id, topic0, block_number, log_index)
       )
-      SETTINGS deduplicate_merge_projection_mode = 'rebuild'
     `,
   });
 
