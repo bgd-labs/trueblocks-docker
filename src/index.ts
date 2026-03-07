@@ -9,9 +9,7 @@ import {
 } from "@envio-dev/hypersync-client";
 import { Cron } from "croner";
 import pino from "pino";
-import { createPublicClient, http } from "viem";
-import * as viemChains from "viem/chains";
-import { CHAIN_BY_ID } from "./chains";
+import { CHAIN_BY_ID, getViem } from "./chains";
 import env from "./env";
 import { ensureSchema } from "./schema";
 
@@ -430,12 +428,7 @@ async function getFinalizedBlock(
   log: pino.Logger,
 ): Promise<number> {
   try {
-    const allChains = Object.values(viemChains);
-    const chain = allChains.find((c) => c.id === env.CHAIN_ID);
-    const client = createPublicClient({
-      chain,
-      transport: http(env.RPC_URL),
-    });
+    const client = getViem();
     const block = await client.getBlock({ blockTag: "finalized" });
     return Number(block.number);
   } catch (err) {

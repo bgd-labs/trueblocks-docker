@@ -1,4 +1,4 @@
-import type { Chain } from "viem";
+import { type Chain, createPublicClient, http } from "viem";
 import {
   arbitrum,
   avalanche,
@@ -18,8 +18,9 @@ import {
   scroll,
   sonic,
 } from "viem/chains";
+import env from "./env";
 
-const CHAINS: readonly Chain[] = [
+const CHAINS = [
   mainnet,
   optimism,
   bsc,
@@ -37,7 +38,7 @@ const CHAINS: readonly Chain[] = [
   linea,
   baseSepolia,
   scroll,
-];
+] satisfies Chain[];
 
 interface ChainConfig {
   readonly id: number;
@@ -56,3 +57,11 @@ function toChainConfig(chain: Chain): ChainConfig {
 export const CHAIN_BY_ID: ReadonlyMap<number, ChainConfig> = new Map(
   CHAINS.map((c) => [c.id, toChainConfig(c)]),
 );
+
+export const getViem = () => {
+  const chain = CHAINS.find((c) => c.id === env.CHAIN_ID);
+  return createPublicClient({
+    chain,
+    transport: http(env.RPC_URL),
+  });
+};
