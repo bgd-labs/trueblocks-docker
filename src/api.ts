@@ -314,7 +314,7 @@ new Elysia()
           }),
         )
         .get(
-          "/:chainId/height",
+          "/:chainId/logs/height",
           async ({ params }) => {
             const safeAddresses = await getSafeAddresses(
               Number(params.chainId),
@@ -341,36 +341,31 @@ new Elysia()
             response: {
               200: t.Object({
                 height: t.Number({
-                  description: "Last indexed block number",
+                  description: "Last indexed block number with logs",
                 }),
               }),
             },
           },
         )
         .get(
-          "/:chainId/stats",
+          "/:chainId/logs/stats",
           async ({ params }) => {
             const safeAddresses = await getSafeAddresses(
               Number(params.chainId),
             );
 
-            let logCountQuery =
+            let countQuery =
               "SELECT count() AS total, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
             if (safeAddresses.length > 0) {
               const formattedAddresses = safeAddresses
                 .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
                 .join(", ");
-              logCountQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
+              countQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
             }
 
-            const [
-              logCountResult,
-              logPartsResult,
-              blockCountResult,
-              blockPartsResult,
-            ] = await Promise.all([
+            const [countResult, partsResult] = await Promise.all([
               clickhouse.query({
-                query: logCountQuery,
+                query: countQuery,
                 query_params: { chainId: params.chainId },
                 format: "JSONEachRow",
               }),
@@ -379,6 +374,71 @@ new Elysia()
                   "SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed, round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio FROM system.parts WHERE table = 'logs' AND active",
                 format: "JSONEachRow",
               }),
+            ]);
+
+            const [counts] = await countResult.json<{
+              total: string;
+              max_block: string;
+            }>();
+            const [parts] = await partsResult.json<{
+              compressed: string;
+              ratio: number;
+            }>();
+
+            return {
+              total: Number(counts?.total ?? 0),
+              maxIndexedBlock: Number(counts?.max_block ?? 0),
+              compressedSize: parts?.compressed ?? "0 B",
+              compressionRatio: parts?.ratio ?? 0,
+            };
+          },
+          {
+            params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
+            response: {
+              200: t.Object({
+                total: t.Number({
+                  description: "Total number of indexed logs",
+                }),
+                maxIndexedBlock: t.Number({
+                  description: "Highest block number with logs indexed",
+                }),
+                compressedSize: t.String({
+                  description: "Compressed size of the logs table on disk",
+                }),
+                compressionRatio: t.Number({
+                  description: "Uncompressed / compressed ratio",
+                }),
+              }),
+            },
+          },
+        )
+        .get(
+          "/:chainId/blocks/height",
+          async ({ params }) => {
+            const result = await clickhouse.query({
+              query:
+                "SELECT max(number) AS height FROM ethereum.blocks WHERE chain_id = {chainId: UInt32}",
+              query_params: { chainId: params.chainId },
+              format: "JSONEachRow",
+            });
+            const [row] = await result.json<{ height: string }>();
+            return { height: Number(row?.height ?? 0) };
+          },
+          {
+            params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
+            response: {
+              200: t.Object({
+                height: t.Number({
+                  description: "Last indexed block number",
+                }),
+              }),
+            },
+          },
+        )
+        .get(
+          "/:chainId/blocks/stats",
+          async ({ params }) => {
+            const [countResult, partsResult] = await Promise.all([
               clickhouse.query({
                 query:
                   "SELECT count() AS total, max(number) AS max_block FROM ethereum.blocks WHERE chain_id = {chainId: UInt32}",
@@ -392,69 +452,37 @@ new Elysia()
               }),
             ]);
 
-            const [logCounts] = await logCountResult.json<{
+            const [counts] = await countResult.json<{
               total: string;
               max_block: string;
             }>();
-            const [logParts] = await logPartsResult.json<{
-              compressed: string;
-              ratio: number;
-            }>();
-            const [blockCounts] = await blockCountResult.json<{
-              total: string;
-              max_block: string;
-            }>();
-            const [blockParts] = await blockPartsResult.json<{
+            const [parts] = await partsResult.json<{
               compressed: string;
               ratio: number;
             }>();
 
             return {
-              logs: {
-                total: Number(logCounts?.total ?? 0),
-                maxIndexedBlock: Number(logCounts?.max_block ?? 0),
-                compressedSize: logParts?.compressed ?? "0 B",
-                compressionRatio: logParts?.ratio ?? 0,
-              },
-              blocks: {
-                total: Number(blockCounts?.total ?? 0),
-                maxIndexedBlock: Number(blockCounts?.max_block ?? 0),
-                compressedSize: blockParts?.compressed ?? "0 B",
-                compressionRatio: blockParts?.ratio ?? 0,
-              },
+              total: Number(counts?.total ?? 0),
+              maxIndexedBlock: Number(counts?.max_block ?? 0),
+              compressedSize: parts?.compressed ?? "0 B",
+              compressionRatio: parts?.ratio ?? 0,
             };
           },
           {
             params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
             response: {
               200: t.Object({
-                logs: t.Object({
-                  total: t.Number({
-                    description: "Total number of indexed logs",
-                  }),
-                  maxIndexedBlock: t.Number({
-                    description: "Highest block number with logs indexed",
-                  }),
-                  compressedSize: t.String({
-                    description: "Compressed size of the logs table on disk",
-                  }),
-                  compressionRatio: t.Number({
-                    description: "Uncompressed / compressed ratio",
-                  }),
+                total: t.Number({
+                  description: "Total number of indexed blocks",
                 }),
-                blocks: t.Object({
-                  total: t.Number({
-                    description: "Total number of indexed blocks",
-                  }),
-                  maxIndexedBlock: t.Number({
-                    description: "Highest block number indexed",
-                  }),
-                  compressedSize: t.String({
-                    description: "Compressed size of the blocks table on disk",
-                  }),
-                  compressionRatio: t.Number({
-                    description: "Uncompressed / compressed ratio",
-                  }),
+                maxIndexedBlock: t.Number({
+                  description: "Highest block number indexed",
+                }),
+                compressedSize: t.String({
+                  description: "Compressed size of the blocks table on disk",
+                }),
+                compressionRatio: t.Number({
+                  description: "Uncompressed / compressed ratio",
                 }),
               }),
             },
