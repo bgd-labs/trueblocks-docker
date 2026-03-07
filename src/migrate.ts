@@ -26,6 +26,10 @@ const migrations: Migration[] = [
     name: "0003_create_blocks_table",
     up: (await import("./migrations/0003_create_blocks_table")).up,
   },
+  {
+    name: "0004_optimize_tables",
+    up: (await import("./migrations/0004_optimize_tables")).up,
+  },
 ];
 
 // ── Runner ───────────────────────────────────────────────────────────────────
