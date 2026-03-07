@@ -702,13 +702,15 @@ try {
     apiToken: env.HYPERSYNC_API_KEY,
   });
 
-  let { startBlock, totalLogs } = await getChainState(clickhouse, env.CHAIN_ID);
-  log.info({ startBlock, totalLogs }, "connected, resuming ingestion");
-
   const syncJob = new Cron(
     `*/${POLL_INTERVAL_SECS} * * * * *`,
     async () => {
       try {
+        let { startBlock, totalLogs } = await getChainState(
+          clickhouse,
+          env.CHAIN_ID,
+        );
+        log.info({ startBlock, totalLogs }, "connected, resuming ingestion");
         const safeBlock = await getSafeBlock(hypersync, log);
 
         if (safeBlock <= startBlock) {
@@ -751,17 +753,6 @@ try {
         });
         await logFlusher.waitDrain();
         await blockFlusher.waitDrain();
-
-        await all({
-          logs: () =>
-            clickhouse.command({
-              query: `OPTIMIZE TABLE ${env.CLICKHOUSE_DB}.logs FINAL`,
-            }),
-          blocks: () =>
-            clickhouse.command({
-              query: `OPTIMIZE TABLE ${env.CLICKHOUSE_DB}.blocks FINAL`,
-            }),
-        });
 
         startBlock = res.nextBlock;
         totalLogs = logFlusher.totalRows;
