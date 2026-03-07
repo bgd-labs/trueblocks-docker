@@ -695,7 +695,7 @@ try {
     },
   });
 
-  await ensureSchema();
+  await ensureSchema(log);
 
   const hypersync = new HypersyncClient({
     url: chain.hypersyncUrl,

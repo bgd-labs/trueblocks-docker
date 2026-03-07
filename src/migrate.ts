@@ -1,4 +1,5 @@
 import { createClient } from "@clickhouse/client";
+import type pino from "pino";
 import env from "./env";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ const migrations: Migration[] = [
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 
-export async function runMigrations(): Promise<void> {
+export async function runMigrations(log: pino.Logger): Promise<void> {
   // Connect to the `default` database first so we can create our target DB
   // without hitting a chicken-and-egg problem.
   const bootstrap = createClient({
@@ -76,7 +77,7 @@ export async function runMigrations(): Promise<void> {
     for (const migration of migrations) {
       if (applied.has(migration.name)) continue;
 
-      console.log(`[migrate] applying ${migration.name} …`);
+      log.info({ migration: migration.name }, "applying migration");
       await migration.up(bootstrap);
       await bootstrap.insert({
         table: `${env.CLICKHOUSE_DB}.migrations`,
@@ -84,13 +85,13 @@ export async function runMigrations(): Promise<void> {
         format: "JSONEachRow",
       });
       ran++;
-      console.log(`[migrate] applied  ${migration.name}`);
+      log.info({ migration: migration.name }, "migration applied");
     }
 
     if (ran === 0) {
-      console.log("[migrate] all migrations already applied");
+      log.info("all migrations already applied");
     } else {
-      console.log(`[migrate] ${ran} migration(s) applied`);
+      log.info({ ran }, "migrations applied");
     }
   } finally {
     await bootstrap.close();

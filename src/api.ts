@@ -4,9 +4,12 @@ import { all } from "better-all";
 import { Elysia, t } from "elysia";
 import { logger } from "elysia-logger";
 import { rateLimit } from "elysia-rate-limit";
+import pino from "pino";
 import { tokenSet } from "./auth";
 import { CHAIN_BY_ID, getFinalizedBlock, getHeadBlock } from "./chains";
 import env from "./env";
+
+const log = pino({ level: env.LOG_LEVEL });
 
 const DEFAULT_LIMIT = 1_000;
 const MAX_LIMIT = 50_000;
@@ -254,7 +257,7 @@ const LOG_SELECT = `
 new Elysia()
   .use(logger())
   .onError(({ error, request }) => {
-    console.error(`Error on ${request.method} ${request.url}:`, error);
+    log.error({ err: error }, `Error on ${request.method} ${request.url}`);
   })
   .use(
     openapi({
@@ -746,4 +749,4 @@ new Elysia()
   )
   .listen(env.PORT);
 
-console.log(`Listening on http://localhost:${env.PORT}`);
+log.info(`Listening on http://localhost:${env.PORT}`);
