@@ -35,6 +35,10 @@ const migrations: Migration[] = [
     name: "0005_transaction_hashes",
     up: (await import("./migrations/0005_transaction_hashes")).up,
   },
+  {
+    name: "0006_logs_topic0_chrono_projection",
+    up: (await import("./migrations/0006_logs_topic0_chrono_projection")).up,
+  },
 ];
 
 // ── Runner ───────────────────────────────────────────────────────────────────
