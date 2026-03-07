@@ -261,16 +261,6 @@ new Elysia()
       documentation: { info: { title: "BGDown API", version: "1.0.0" } },
     }),
   )
-  .use(
-    rateLimit({
-      max: 600,
-      duration: 60_000,
-      generator: (req) =>
-        new URL(req.url).searchParams.get("token") ??
-        req.headers.get("x-forwarded-for") ??
-        "",
-    }),
-  )
   .get("/", ({ redirect }) => redirect("/openapi"))
   .get(
     "/chains",
@@ -296,96 +286,6 @@ new Elysia()
       },
     },
   )
-  .get(
-    "/:chainId/height",
-    async ({ params }) => {
-      const safeAddresses = await getSafeAddresses(Number(params.chainId));
-      let query =
-        "SELECT max(block_number) AS height FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
-      if (safeAddresses.length > 0) {
-        const formattedAddresses = safeAddresses
-          .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
-          .join(", ");
-        query += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
-      }
-
-      const result = await clickhouse.query({
-        query,
-        query_params: { chainId: params.chainId },
-        format: "JSONEachRow",
-      });
-      const [row] = await result.json<{ height: string }>();
-      return { height: Number(row?.height ?? 0) };
-    },
-    {
-      params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
-      response: {
-        200: t.Object({
-          height: t.Number({ description: "Last indexed block number" }),
-        }),
-      },
-    },
-  )
-  .get(
-    "/:chainId/stats",
-    async ({ params }) => {
-      const safeAddresses = await getSafeAddresses(Number(params.chainId));
-      let countQuery =
-        "SELECT count() AS total_logs, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
-      if (safeAddresses.length > 0) {
-        const formattedAddresses = safeAddresses
-          .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
-          .join(", ");
-        countQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
-      }
-
-      const [countResult, partsResult] = await Promise.all([
-        clickhouse.query({
-          query: countQuery,
-          query_params: { chainId: params.chainId },
-          format: "JSONEachRow",
-        }),
-        clickhouse.query({
-          query:
-            "SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed, round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio FROM system.parts WHERE table = 'logs' AND active",
-          format: "JSONEachRow",
-        }),
-      ]);
-
-      const [counts] = await countResult.json<{
-        total_logs: string;
-        max_block: string;
-      }>();
-      const [parts] = await partsResult.json<{
-        compressed: string;
-        ratio: number;
-      }>();
-
-      return {
-        totalLogs: Number(counts?.total_logs ?? 0),
-        maxIndexedBlock: Number(counts?.max_block ?? 0),
-        compressedSize: parts?.compressed ?? "0 B",
-        compressionRatio: parts?.ratio ?? 0,
-      };
-    },
-    {
-      params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
-      response: {
-        200: t.Object({
-          totalLogs: t.Number({ description: "Total number of indexed logs" }),
-          maxIndexedBlock: t.Number({
-            description: "Highest block number indexed",
-          }),
-          compressedSize: t.String({
-            description: "Compressed size of the logs table on disk",
-          }),
-          compressionRatio: t.Number({
-            description: "Uncompressed / compressed ratio",
-          }),
-        }),
-      },
-    },
-  )
   .guard(
     {
       beforeHandle: ({ query, status }) => {
@@ -403,6 +303,114 @@ new Elysia()
     },
     (app) =>
       app
+        .use(
+          rateLimit({
+            max: 600,
+            duration: 60_000,
+            generator: (req) =>
+              new URL(req.url).searchParams.get("token") ??
+              req.headers.get("x-forwarded-for") ??
+              "",
+          }),
+        )
+        .get(
+          "/:chainId/height",
+          async ({ params }) => {
+            const safeAddresses = await getSafeAddresses(
+              Number(params.chainId),
+            );
+            let query =
+              "SELECT max(block_number) AS height FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
+            if (safeAddresses.length > 0) {
+              const formattedAddresses = safeAddresses
+                .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
+                .join(", ");
+              query += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
+            }
+
+            const result = await clickhouse.query({
+              query,
+              query_params: { chainId: params.chainId },
+              format: "JSONEachRow",
+            });
+            const [row] = await result.json<{ height: string }>();
+            return { height: Number(row?.height ?? 0) };
+          },
+          {
+            params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
+            response: {
+              200: t.Object({
+                height: t.Number({
+                  description: "Last indexed block number",
+                }),
+              }),
+            },
+          },
+        )
+        .get(
+          "/:chainId/stats",
+          async ({ params }) => {
+            const safeAddresses = await getSafeAddresses(
+              Number(params.chainId),
+            );
+            let countQuery =
+              "SELECT count() AS total_logs, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
+            if (safeAddresses.length > 0) {
+              const formattedAddresses = safeAddresses
+                .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
+                .join(", ");
+              countQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
+            }
+
+            const [countResult, partsResult] = await Promise.all([
+              clickhouse.query({
+                query: countQuery,
+                query_params: { chainId: params.chainId },
+                format: "JSONEachRow",
+              }),
+              clickhouse.query({
+                query:
+                  "SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed, round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio FROM system.parts WHERE table = 'logs' AND active",
+                format: "JSONEachRow",
+              }),
+            ]);
+
+            const [counts] = await countResult.json<{
+              total_logs: string;
+              max_block: string;
+            }>();
+            const [parts] = await partsResult.json<{
+              compressed: string;
+              ratio: number;
+            }>();
+
+            return {
+              totalLogs: Number(counts?.total_logs ?? 0),
+              maxIndexedBlock: Number(counts?.max_block ?? 0),
+              compressedSize: parts?.compressed ?? "0 B",
+              compressionRatio: parts?.ratio ?? 0,
+            };
+          },
+          {
+            params: t.Object({ chainId: t.String({ examples: ["1"] }) }),
+            response: {
+              200: t.Object({
+                totalLogs: t.Number({
+                  description: "Total number of indexed logs",
+                }),
+                maxIndexedBlock: t.Number({
+                  description: "Highest block number indexed",
+                }),
+                compressedSize: t.String({
+                  description: "Compressed size of the logs table on disk",
+                }),
+                compressionRatio: t.Number({
+                  description: "Uncompressed / compressed ratio",
+                }),
+              }),
+            },
+          },
+        )
         .get(
           "/:chainId/logs",
           async ({ params, query }) => {
