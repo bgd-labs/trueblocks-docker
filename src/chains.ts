@@ -68,10 +68,7 @@ const hypersyncCache = new Map<number, HypersyncClient>();
 export function getViemForChain(chainId: number) {
   if (!viemCache.has(chainId)) {
     const chain = CHAINS.find((c) => c.id === chainId);
-    viemCache.set(
-      chainId,
-      createPublicClient({ chain, transport: http() }),
-    );
+    viemCache.set(chainId, createPublicClient({ chain, transport: http() }));
   }
   return viemCache.get(chainId) as ReturnType<typeof createPublicClient>;
 }
@@ -89,18 +86,4 @@ export function getHypersyncForChain(chainId: number) {
   }
   // biome-ignore lint/style/noNonNullAssertion: we know it's there because we just set it if it wasn't
   return hypersyncCache.get(chainId)!;
-}
-
-// ── Convenience helpers (use CHAIN_ID from env) ───────────────────────────────
-
-const getViem = () => getViemForChain(env.CHAIN_ID);
-
-export async function getFinalizedBlock(): Promise<number> {
-  const block = await getViem().getBlock({ blockTag: "finalized" });
-  return Number(block.number);
-}
-
-export async function getHeadBlock(): Promise<number> {
-  const block = await getViem().getBlock({ blockTag: "latest" });
-  return Number(block.number);
 }

@@ -7,19 +7,14 @@ import {
   type Query,
   type QueryResponse,
 } from "@envio-dev/hypersync-client";
-import { all } from "better-all";
-import { Cron } from "croner";
 import pino from "pino";
-import { CHAIN_BY_ID, getFinalizedBlock, getHeadBlock } from "./chains";
+import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
 import { ensureSchema } from "./schema";
 
 const LOG_FLUSH_BATCH_SIZE = 250_000;
 const BLOCK_FLUSH_BATCH_SIZE = 50_000;
 const FLUSH_INTERVAL_MS = 10_000;
-
-// Seconds to wait before re-checking the chain tip after catching up.
-const POLL_INTERVAL_SECS = 10;
 
 // ── Row types ───────────────────────────────────────────────────────────────
 
@@ -424,23 +419,6 @@ async function flushBlockBatch(
 
 const REORG_SAFETY_FALLBACK = 64;
 
-async function getSafeBlock(
-  hypersync: HypersyncClient,
-  log: pino.Logger,
-): Promise<number> {
-  try {
-    return await getFinalizedBlock();
-  } catch (err) {
-    const tip = await hypersync.getHeight();
-    const fallback = tip - REORG_SAFETY_FALLBACK;
-    log.warn(
-      { err, tip, fallback },
-      "finalized block query failed, falling back to tip - safety margin",
-    );
-    return fallback;
-  }
-}
-
 async function getChainState(
   clickhouse: ReturnType<typeof createClient>,
   chainId: number,
@@ -702,77 +680,89 @@ try {
     apiToken: env.HYPERSYNC_API_KEY,
   });
 
-  const syncJob = new Cron(
-    `*/${POLL_INTERVAL_SECS} * * * * *`,
-    async () => {
-      try {
-        let { startBlock, totalLogs } = await getChainState(
-          clickhouse,
-          env.CHAIN_ID,
-        );
-        log.info({ startBlock, totalLogs }, "connected, resuming ingestion");
-        const safeBlock = await getSafeBlock(hypersync, log);
+  let { startBlock, totalLogs } = await getChainState(clickhouse, env.CHAIN_ID);
+  log.info({ startBlock, totalLogs }, "connected, resuming ingestion");
 
-        if (safeBlock <= startBlock) {
-          log.info(
-            { safeBlock, startBlock },
-            "at finalized tip, waiting for next cron tick",
-          );
-          return;
-        }
+  const heightStream = await hypersync.streamHeight();
 
-        log.info(
-          {
-            fromBlock: startBlock,
-            toBlock: safeBlock,
-          },
-          "started streaming",
-        );
+  while (true) {
+    const event = await heightStream.recv();
 
-        const logFlusher = new Flusher<LogRow>(
-          log,
-          flushLogBatch,
-          "logs",
-          LOG_FLUSH_BATCH_SIZE,
-          totalLogs,
-        );
-        const blockFlusher = new Flusher<BlockRow>(
-          log,
-          flushBlockBatch,
-          "blocks",
-          BLOCK_FLUSH_BATCH_SIZE,
-        );
-        const res = await runStream({
-          hypersync,
-          chainId: env.CHAIN_ID,
+    if (event === null) {
+      log.info("height stream closed, exiting");
+      break;
+    }
+
+    if (event.type === "Reconnecting") {
+      log.warn(
+        { delayMillis: event.delayMillis, errorMsg: event.errorMsg },
+        "height stream reconnecting",
+      );
+      continue;
+    }
+
+    if (event.type !== "Height") {
+      continue;
+    }
+
+    // HyperSync only advances its height over data that is already indexed
+    // (finalized-ish), so we use it directly as our safe ceiling.
+    const safeBlock = event.height - REORG_SAFETY_FALLBACK;
+
+    if (safeBlock <= startBlock) {
+      log.info(
+        { safeBlock, startBlock },
+        "at tip, waiting for next height event",
+      );
+      continue;
+    }
+
+    log.info(
+      { fromBlock: startBlock, toBlock: safeBlock },
+      "started streaming",
+    );
+
+    try {
+      const logFlusher = new Flusher<LogRow>(
+        log,
+        flushLogBatch,
+        "logs",
+        LOG_FLUSH_BATCH_SIZE,
+        totalLogs,
+      );
+      const blockFlusher = new Flusher<BlockRow>(
+        log,
+        flushBlockBatch,
+        "blocks",
+        BLOCK_FLUSH_BATCH_SIZE,
+      );
+      const res = await runStream({
+        hypersync,
+        chainId: env.CHAIN_ID,
+        fromBlock: startBlock,
+        toBlock: safeBlock,
+        log,
+        logFlusher,
+        blockFlusher,
+      });
+      await logFlusher.waitDrain();
+      await blockFlusher.waitDrain();
+
+      startBlock = res.nextBlock;
+      totalLogs = logFlusher.totalRows;
+
+      log.info(
+        {
           fromBlock: startBlock,
           toBlock: safeBlock,
-          log,
-          logFlusher,
-          blockFlusher,
-        });
-        await logFlusher.waitDrain();
-        await blockFlusher.waitDrain();
-
-        startBlock = res.nextBlock;
-        totalLogs = logFlusher.totalRows;
-
-        log.info(
-          {
-            fromBlock: startBlock,
-            toBlock: safeBlock,
-            logsSynced: res.totalLogs,
-          },
-          "finished streaming",
-        );
-      } catch (err) {
-        log.error(err, "error during sync iteration");
-      }
-    },
-    { protect: true },
-  );
-
-  syncJob.trigger();
+          logsSynced: res.totalLogs,
+        },
+        "finished streaming",
+      );
+    } catch (err) {
+      log.error(err, "error during sync iteration");
+    }
+  }
 } catch (err) {
   pino().error(err, "fatal error");
   process.exit(1);
