@@ -6,7 +6,6 @@ import { rateLimit } from "elysia-rate-limit";
 import { tokenSet } from "./auth";
 import { CHAIN_BY_ID } from "./chains";
 import env from "./env";
-import { getSafeAddresses } from "./safe-addresses";
 
 const DEFAULT_LIMIT = 1_000;
 const MAX_LIMIT = 50_000;
@@ -316,20 +315,9 @@ new Elysia()
         .get(
           "/:chainId/logs/height",
           async ({ params }) => {
-            const safeAddresses = await getSafeAddresses(
-              Number(params.chainId),
-            );
-            let query =
-              "SELECT max(block_number) AS height FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
-            if (safeAddresses.length > 0) {
-              const formattedAddresses = safeAddresses
-                .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
-                .join(", ");
-              query += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
-            }
-
             const result = await clickhouse.query({
-              query,
+              query:
+                "SELECT max(block_number) AS height FROM ethereum.logs WHERE chain_id = {chainId: UInt32}",
               query_params: { chainId: params.chainId },
               format: "JSONEachRow",
             });
@@ -350,22 +338,10 @@ new Elysia()
         .get(
           "/:chainId/logs/stats",
           async ({ params }) => {
-            const safeAddresses = await getSafeAddresses(
-              Number(params.chainId),
-            );
-
-            let countQuery =
-              "SELECT count() AS total, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}";
-            if (safeAddresses.length > 0) {
-              const formattedAddresses = safeAddresses
-                .map((a) => `'${a.toLowerCase().replace("0x", "")}'`)
-                .join(", ");
-              countQuery += ` AND lower(hex(address)) NOT IN (${formattedAddresses})`;
-            }
-
             const [countResult, partsResult] = await Promise.all([
               clickhouse.query({
-                query: countQuery,
+                query:
+                  "SELECT count() AS total, max(block_number) AS max_block FROM ethereum.logs WHERE chain_id = {chainId: UInt32}",
                 query_params: { chainId: params.chainId },
                 format: "JSONEachRow",
               }),
