@@ -61,7 +61,7 @@ export const CHAIN_BY_ID: ReadonlyMap<number, ChainConfig> = new Map(
 
 // ── Per-chain client caches ───────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: typing this is a hustle
 const viemCache = new Map<number, any>();
 const hypersyncCache = new Map<number, HypersyncClient>();
 
@@ -87,6 +87,7 @@ export function getHypersyncForChain(chainId: number) {
       }),
     );
   }
+  // biome-ignore lint/style/noNonNullAssertion: we know it's there because we just set it if it wasn't
   return hypersyncCache.get(chainId)!;
 }
 
