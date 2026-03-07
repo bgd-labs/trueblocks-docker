@@ -760,6 +760,15 @@ try {
         await logFlusher.waitDrain();
         await blockFlusher.waitDrain();
 
+        await Promise.all([
+          clickhouse.command({
+            query: `OPTIMIZE TABLE ${env.CLICKHOUSE_DB}.logs FINAL`,
+          }),
+          clickhouse.command({
+            query: `OPTIMIZE TABLE ${env.CLICKHOUSE_DB}.blocks FINAL`,
+          }),
+        ]);
+
         startBlock = res.nextBlock;
         totalLogs = logFlusher.totalRows;
 
